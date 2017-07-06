@@ -1,3 +1,12 @@
+From: Christian Marillat <marillat@deb-multimedia.org>
+Date: Thu, 6 Jul 2017 15:59:17 +0200
+Subject: Plugin path OFX
+
+Need to patch the Natron plug-in path into the embedded OpenFX API
+---
+
+Index: b/DebugProxy/DebugProxy.cpp
+===================================================================
 --- a/DebugProxy/DebugProxy.cpp
 +++ b/DebugProxy/DebugProxy.cpp
 @@ -74,7 +74,7 @@ OFXS_NAMESPACE_ANONYMOUS_ENTER
@@ -9,6 +18,8 @@
  #define BINARY_PATH "/usr/OFX/Plugins.disabled/Sapphire.ofx.bundle/Contents/Linux-x86-64/Sapphire.ofx"
  #endif
  #if defined(__FreeBSD__)
+Index: b/openfx/HostSupport/src/ofxhPluginCache.cpp
+===================================================================
 --- a/openfx/HostSupport/src/ofxhPluginCache.cpp
 +++ b/openfx/HostSupport/src/ofxhPluginCache.cpp
 @@ -314,7 +314,7 @@ PluginCache::PluginCache()
@@ -20,6 +31,8 @@
  #endif
  #if defined(__APPLE__)
    _pluginPath.push_back("/Library/OFX/Plugins");
+Index: b/openfx/Support/Plugins/Makefile.master
+===================================================================
 --- a/openfx/Support/Plugins/Makefile.master
 +++ b/openfx/Support/Plugins/Makefile.master
 @@ -55,7 +55,7 @@ ifeq ($(OS:MINGW%=MINGW),MINGW)
