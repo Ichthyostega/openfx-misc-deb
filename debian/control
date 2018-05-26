@@ -1,0 +1,15 @@
+Source: openfx-misc-natron
+Section: video
+Priority: optional
+Maintainer: Aleksey Samoilov <samoilov.lex@gmail.com>
+Standards-Version: 4.1.2
+Build-Depends: debhelper (>= 9), libgl1-mesa-dev, quilt, curl
+
+Package: openfx-misc-natron
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: Miscellaneous OFX / OpenFX / Open Effects plugins
+ These plugins were primarily developed for Natron, but may be used with
+ other OpenFX hosts.
+ .
+ See https://github.com/devernay/openfx-misc for a complete list of plugins.

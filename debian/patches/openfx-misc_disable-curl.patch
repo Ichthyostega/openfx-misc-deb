@@ -1,0 +1,17 @@
+--- a/CImg/Makefile	2018-05-09 20:49:05.000000000 +0400
++++ b/CImg/Makefile	2018-05-09 20:56:32.933096325 +0400
+@@ -180,12 +180,12 @@
+ CIMGVERSION=8761ce483600ccbbea05a14b18d916744f3580af
+ 
+ CImg.h: Inpaint/inpaint.h
+-	curl -L -s -S -o $@ https://raw.githubusercontent.com/dtschump/CImg/$(CIMGVERSION)/CImg.h
++#	curl -L -s -S -o $@ https://raw.githubusercontent.com/dtschump/CImg/$(CIMGVERSION)/CImg.h
+ #	patch -p0 -d. < CImg-2.0.0-anisotropic.patch
+ #	patch -p0 -d. < CImg-1.7.1-omp.patch
+ 
+ Inpaint/inpaint.h:
+-	curl -L -s -S -o $@ https://raw.githubusercontent.com/dtschump/CImg/$(CIMGVERSION)/plugins/inpaint.h
++#	curl -L -s -S -o $@ https://raw.githubusercontent.com/dtschump/CImg/$(CIMGVERSION)/plugins/inpaint.h
+ 	patch -p0 -d. < Inpaint/inpaint.h.patch
+ 
+ nlmeans.h:
