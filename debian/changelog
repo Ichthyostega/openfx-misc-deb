@@ -1,0 +1,65 @@
+openfx-misc-natron-dmo (2.3.14-dmo1) unstable; urgency=medium
+
+  * New upstream release.
+
+ -- Christian Marillat <marillat@deb-multimedia.org>  Mon, 16 Jul 2018 19:17:25 +0200
+
+openfx-misc-natron-dmo (2.3.13-dmo1) unstable; urgency=medium
+
+  * New upstream release.
+
+ -- Christian Marillat <marillat@deb-multimedia.org>  Wed, 27 Jun 2018 15:53:47 +0200
+
+openfx-misc-natron-dmo (2.3.12-dmo1) unstable; urgency=medium
+
+  * New upstream release.
+
+ -- Christian Marillat <marillat@deb-multimedia.org>  Thu, 24 May 2018 08:51:02 +0200
+
+openfx-misc-natron-dmo (2.3.11-dmo1) unstable; urgency=medium
+
+  * New upstream release.
+
+ -- Christian Marillat <marillat@deb-multimedia.org>  Mon, 07 May 2018 13:02:58 +0200
+
+openfx-misc-natron-dmo (2.3.8-dmo1) unstable; urgency=medium
+
+  * New upstream release.
+
+ -- Christian Marillat <marillat@deb-multimedia.org>  Thu, 22 Mar 2018 08:34:48 +0100
+
+openfx-misc-natron-dmo (2.3.7-dmo1) unstable; urgency=medium
+
+  * New upstream release.
+
+ -- Christian Marillat <marillat@deb-multimedia.org>  Fri, 16 Mar 2018 15:27:31 +0100
+
+openfx-misc-natron-dmo (2.3.4-dmo1) unstable; urgency=medium
+
+  * New upstream release.
+
+ -- Christian Marillat <marillat@deb-multimedia.org>  Tue, 12 Dec 2017 01:37:53 +0100
+
+openfx-misc-natron-dmo (2.3.3-dmo1) unstable; urgency=medium
+
+  * New upstream release.
+
+ -- Christian Marillat <marillat@deb-multimedia.org>  Thu, 09 Nov 2017 08:16:35 +0100
+
+openfx-misc-natron-dmo (2.3.2-dmo1) unstable; urgency=medium
+
+  * New upstream bugfix release.
+
+ -- Christian Marillat <marillat@deb-multimedia.org>  Mon, 14 Aug 2017 09:14:23 +0200
+
+openfx-misc-natron-dmo (2.3.1-dmo1) unstable; urgency=medium
+
+  * New upstream release.
+
+ -- Christian Marillat <marillat@deb-multimedia.org>  Wed, 26 Jul 2017 20:12:11 +0200
+
+openfx-misc-natron-dmo (2.3.0-dmo1) unstable; urgency=medium
+
+  * Initial release.
+
+ -- Christian Marillat <marillat@deb-multimedia.org>  Fri, 07 Jul 2017 15:46:15 +0200

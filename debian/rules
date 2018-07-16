@@ -1,0 +1,43 @@
+#!/usr/bin/make -f
+
+ifneq (,$(findstring parallel=,$(DEB_BUILD_OPTIONS)))
+	NCPUS = $(patsubst parallel=%,%,$(filter parallel=%,$(DEB_BUILD_OPTIONS)))
+else
+	NCPUS := $(shell getconf _NPROCESSORS_ONLN 2>/dev/null || echo 1)
+	ifeq ($(NCPUS),-1)
+		NCPUS:=1
+	endif
+	ifeq ($(NCPUS),0)
+		NCPUS:=1
+	endif
+endif
+
+%:
+	dh $@ --with quilt
+
+override_dh_auto_build:
+# git clone https://github.com/NatronGitHub/openfx
+# git clone https://github.com/NatronGitHub/openfx-supportext SupportExt
+# find -name '.git*' | xargs rm -rf
+
+	$(MAKE) -j $(NCPUS) CONFIG+=stable
+
+override_dh_auto_install:
+	$(MAKE) install CONFIG+=stable \
+	DESTDIR=$(CURDIR)/debian/openfx-misc-natron
+
+override_dh_clean:
+	$(MAKE) clean CONFIG+=stable
+
+	dh_clean CImg/CImg.h CImg/Inpaint/inpaint.h
+
+	-rm -rf openfx/Documentation
+	-rm -rf openfx/Examples
+	-rm -rf openfx/website
+	-rm -rf openfx/scripts
+	-rm -rf openfx/Guide
+
+	-rm -rf openfx/HostSupport/expat-2.2.1
+	-rm -rf openfx/HostSupport/examples
+
+	-rm -rf openfx/Support/PropTester
