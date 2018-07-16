@@ -366,6 +366,17 @@ typedef void (APIENTRYP PFNGLDRAWBUFFERSPROC) (GLsizei n, const GLenum *bufs);
 #endif
 static PFNGLDRAWBUFFERSPROC glDrawBuffers = NULL;
 
+#ifdef USE_DEPTH
+typedef void (APIENTRYP PFNGLGENRENDERBUFFERSPROC)(GLsizei n, GLuint* renderbuffers);
+typedef void (APIENTRYP PFNGLBINDRENDERBUFFERPROC)(GLenum target, GLuint renderbuffer);
+typedef void (APIENTRYP PFNGLRENDERBUFFERSTORAGEPROC)(GLenum target, GLenum internalformat, GLsizei width, GLsizei height);
+typedef void (APIENTRYP PFNGLDELETERENDERBUFFERSPROC)(GLsizei n, const GLuint* renderbuffers);
+static PFNGLGENRENDERBUFFERSPROC glGenRenderbuffers;
+static PFNGLBINDRENDERBUFFERPROC glBindRenderbuffer;
+static PFNGLRENDERBUFFERSTORAGEPROC glRenderbufferStorage;
+static PFNGLDELETERENDERBUFFERSPROC glDeleteRenderbuffers;
+#endif
+
 // Sync Objects https://www.opengl.org/wiki/Sync_Object
 #ifndef GL_ARB_sync
 //typedef GLsync (APIENTRYP PFNGLFENCESYNCPROC)(GLenum condition, GLbitfield flags);
@@ -1549,7 +1560,7 @@ ShadertoyPlugin::RENDERFUNC(const OFX::RenderArguments &args)
         }
         if (must_recompile || uniforms_changed) {
             std::fill(shadertoy->iParamLoc, shadertoy->iParamLoc + NBUNIFORMS, -1);
-            unsigned paramCount = (unsigned)std::max( 0, std::min(_paramCount->getValue(), (int)_paramType.size()) );
+            unsigned paramCount = (unsigned)(std::max)( 0, (std::min)(_paramCount->getValue(), (int)_paramType.size()) );
             for (unsigned i = 0; i < paramCount; ++i) {
                 std::string paramName;
                 _paramName[i]->getValue(paramName);
@@ -1846,7 +1857,7 @@ ShadertoyPlugin::RENDERFUNC(const OFX::RenderArguments &args)
         }
         glUniform4f (shadertoy->iMouseLoc, (GLfloat)(x * rs.x), (GLfloat)(y * rs.y), (GLfloat)(xc * rs.x), (GLfloat)(yc * rs.y));
     }
-    unsigned paramCount = (unsigned)std::max( 0, std::min(_paramCount->getValue(), (int)_paramType.size()) );
+    unsigned paramCount = (unsigned)(std::max)( 0, (std::min)(_paramCount->getValue(), (int)_paramType.size()) );
     for (unsigned i = 0; i < paramCount; ++i) {
         if (shadertoy->iParamLoc[i] >= 0) {
             UniformTypeEnum paramType = (UniformTypeEnum)_paramType[i]->getValue();
@@ -2186,6 +2197,21 @@ ShadertoyPlugin::RENDERFUNC(const OFX::RenderArguments &args)
 } // ShadertoyPlugin::RENDERFUNC
 
 static
+std::string
+unsignedToString(unsigned i)
+{
+    if (i == 0) {
+        return "0";
+    }
+    std::string nb;
+    for (unsigned j = i; j != 0; j /= 10) {
+        nb = (char)( '0' + (j % 10) ) + nb;
+    }
+
+    return nb;
+}
+
+static
 void
 getGlVersion(int *major,
              int *minor)
@@ -2282,6 +2308,8 @@ ShadertoyPlugin::contextAttached(bool createContextData)
         if ( message.empty() ) {
             const char* glRenderer = (const char*)glGetString(GL_RENDERER);
             const char* glVersion = (const char*)glGetString(GL_VERSION);
+            int major, minor;
+            getGlVersion(&major, &minor);
             const char* glVendor = (const char*)glGetString(GL_VENDOR);
             const char* glSlVersion = (const char*)glGetString(GL_SHADING_LANGUAGE_VERSION);
             const char* glExtensions = (const char*)glGetString(GL_EXTENSIONS);
@@ -2290,6 +2318,11 @@ ShadertoyPlugin::contextAttached(bool createContextData)
             message += glRenderer ? glRenderer : "N/A";
             message += "\nGL_VERSION = ";
             message += glVersion ? glVersion : "N/A";
+            message += " (";
+            message += unsignedToString((unsigned int)major);
+            message += '.';
+            message += unsignedToString((unsigned int)minor);
+            message += ')';
             message += "\nGL_VENDOR = ";
             message += glVendor ? glVendor : "N/A";
             message += "\nGL_SHADING_LANGUAGE_VERSION = ";
@@ -2302,9 +2335,14 @@ ShadertoyPlugin::contextAttached(bool createContextData)
     // Non-power-of-two textures are supported if the GL version is 2.0 or greater, or if the implementation exports the GL_ARB_texture_non_power_of_two extension. (Mesa does, of course)
     int major, minor;
     getGlVersion(&major, &minor);
+    std::string glVersion = unsignedToString((unsigned int)major) + '.' + unsignedToString((unsigned int)minor);
+    if (major == 0) {
+        sendMessage(OFX::Message::eMessageError, "", "Can not render: glGetString(GL_VERSION) failed.");
+        OFX::throwSuiteStatusException(kOfxStatFailed);
+    }
     if (major < 2) {
         if ( !glutExtensionSupported("GL_ARB_texture_non_power_of_two") ) {
-            sendMessage(OFX::Message::eMessageError, "", "Can not render: OpenGL 2.0 or GL_ARB_texture_non_power_of_two is required.");
+            sendMessage(OFX::Message::eMessageError, "", "Can not render: OpenGL 2.0 or GL_ARB_texture_non_power_of_two is required (this is OpenGL " + glVersion + ").");
             OFX::throwSuiteStatusException(kOfxStatFailed);
         }
     }
@@ -2319,7 +2357,7 @@ ShadertoyPlugin::contextAttached(bool createContextData)
         // GL_VERSION_3_0 or GL_EXT_framebuffer_object or GL_ARB_framebuffer_object
         if ( !glutExtensionSupported("GL_EXT_framebuffer_object") &&
              !glutExtensionSupported("GL_ARB_framebuffer_object") ) {
-            sendMessage(OFX::Message::eMessageError, "", "Can not render: OpenGL 3.0 or GL_EXT_framebuffer_object or GL_ARB_framebuffer_object is required.");
+            sendMessage(OFX::Message::eMessageError, "", "Can not render: OpenGL 3.0 or GL_EXT_framebuffer_object or GL_ARB_framebuffer_object is required (this is OpenGL " + glVersion + ").");
             OFX::throwSuiteStatusException(kOfxStatFailed);
         }
        if ( (major == 2) && (minor < 1) ) {
@@ -2327,13 +2365,13 @@ ShadertoyPlugin::contextAttached(bool createContextData)
            // GL_VERSION_2_0 or GL_ARB_vertex_shader
            if ( !glutExtensionSupported("GL_ARB_shader_objects") ||
                 !glutExtensionSupported("GL_ARB_vertex_shader") ) {
-               sendMessage(OFX::Message::eMessageError, "", "Can not render: OpenGL 2.0 or GL_ARB_shader_objects and GL_ARB_vertex_shader is required for GLSL support.");
+               sendMessage(OFX::Message::eMessageError, "", "Can not render: OpenGL 2.0 or GL_ARB_shader_objects and GL_ARB_vertex_shader is required for GLSL support (this is OpenGL " + glVersion + ").");
                OFX::throwSuiteStatusException(kOfxStatFailed);
            }
            if ( (major == 1) && (minor < 5) ) {
                // GL_VERSION_1_5 or GL_ARB_vertex_buffer_object
                if ( !glutExtensionSupported("GL_ARB_vertex_buffer_object") ) {
-                   sendMessage(OFX::Message::eMessageError, "", "Can not render: OpenGL 1.5 or GL_ARB_vertex_buffer_object is required.");
+                   sendMessage(OFX::Message::eMessageError, "", "Can not render: OpenGL 1.5 or GL_ARB_vertex_buffer_object is required (this is OpenGL " + glVersion + ").");
                    OFX::throwSuiteStatusException(kOfxStatFailed);
                }
            }
@@ -2450,6 +2488,17 @@ ShadertoyPlugin::contextAttached(bool createContextData)
         //glGetFramebufferAttachmentParameteriv = (PFNGLGETFRAMEBUFFERATTACHMENTPARAMETERIVPROC)getProcAddress("glGetFramebufferAttachmentParameteriv", "glGetFramebufferAttachmentParameterivEXT", "glGetFramebufferAttachmentParameterivARB"); // EXT_framebuffer_object or ARB_framebuffer_object
         glGenerateMipmap = (PFNGLGENERATEMIPMAPPROC)getProcAddress("glGenerateMipmap", "glGenerateMipmapEXT", "glGenerateMipmapARB"); // EXT_framebuffer_object or ARB_framebuffer_object
         glDrawBuffers = (PFNGLDRAWBUFFERSPROC)getProcAddress("glDrawBuffers", "glDrawBuffersEXT", "glDrawBuffersARB"); // EXT_framebuffer_object or ARB_framebuffer_object
+
+#ifdef USE_DEPTH
+        typedef void (APIENTRYP PFNGLGENRENDERBUFFERSPROC)(GLsizei n, GLuint* renderbuffers);
+        typedef void (APIENTRYP PFNGLBINDRENDERBUFFERPROC)(GLenum target, GLuint renderbuffer);
+        typedef void (APIENTRYP PFNGLRENDERBUFFERSTORAGEPROC)(GLenum target, GLenum internalformat, GLsizei width, GLsizei height);
+        typedef void (APIENTRYP PFNGLDELETERENDERBUFFERSPROC)(GLsizei n, const GLuint* renderbuffers);
+        glGenRenderbuffers= (PFNGLGENRENDERBUFFERSPROC)getProcAddress("glGenRenderbuffers", "glGenRenderbuffersEXT", "glGenRenderbuffersARB");
+        glBindRenderbuffer = (PFNGLBINDRENDERBUFFERPROC)getProcAddress("glBindRenderbuffer", "glBindRenderbufferEXT", "glBindRenderbufferARB");
+        glRenderbufferStorage = (PFNGLRENDERBUFFERSTORAGEPROC)getProcAddress("glRenderbufferStorage", "glRenderbufferStorageEXT", "glRenderbufferStorageARB");
+        glDeleteRenderbuffers = (PFNGLDELETERENDERBUFFERSPROC)getProcAddress("glDeleteRenderbuffers", "glDeleteRenderbuffersEXT", "glDeleteRenderbuffersARB");
+#endif
 
         // GL_VERSION_3_2 or GL_ARB_sync or GL_EXT_sync
         // Sync Objects https://www.opengl.org/wiki/Sync_Object

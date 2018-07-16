@@ -386,8 +386,8 @@ private:
                         }
                         const PIX *srcPixi = (const PIX *)  (_srcImgs[i] ? _srcImgs[i]->getPixelAddress(x, y) : 0);
                         if (srcPixi) {
-                            PIX a;
-                            float b;
+                            PIX a = PIX();
+                            float b = 0.;
                             if (operation == eOperationOver) {
                                 // over requires alpha
                                 if (nComponents == 4) {
@@ -747,7 +747,7 @@ FrameBlendPlugin::setupAndProcess(FrameBlendProcessorBase &processor,
     _frameRange->getValueAtTime(time, first, last);
     int interval;
     _frameInterval->getValueAtTime(time, interval);
-    interval = std::max(1, interval);
+    interval = (std::max)(1, interval);
     decay = 1. - ipow(1. - decay, interval); // adjust decay so that the final aspect is similar for different values of the interval
 
     int n = (std::abs(last - first) + 1) / interval;
@@ -771,7 +771,7 @@ FrameBlendPlugin::setupAndProcess(FrameBlendProcessorBase &processor,
     int imax = 0;
     while (imax < n) {
         imin = imax;
-        imax = std::min(imin + kFrameChunk, n);
+        imax = (std::min)(imin + kFrameChunk, n);
         bool lastPass = (imax == n);
 
         if (!lastPass) {

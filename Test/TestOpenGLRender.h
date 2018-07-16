@@ -260,7 +260,7 @@ typedef void (APIENTRYP PFNGLACTIVETEXTUREARBPROC)(GLenum texture);
 typedef void (APIENTRYP PFNGLCLIENTACTIVETEXTUREPROC)(GLenum texture);
 typedef void (APIENTRYP PFNGLMULTITEXCOORD2FROC)(GLenum target, GLfloat s, GLfloat t);
 #endif
-// static PFNGLACTIVETEXTUREARBPROC glActiveTexture = NULL;
+static PFNGLACTIVETEXTUREARBPROC glActiveTexture = NULL;
 // static PFNGLCLIENTACTIVETEXTUREPROC glClientActiveTexture = NULL;
 // static PFNGLMULTITEXCOORD2FPROC glMultiTexCoord2f = NULL;
 
@@ -293,6 +293,17 @@ static PFNGLGENERATEMIPMAPPROC glGenerateMipmap = NULL;
 typedef void (APIENTRYP PFNGLDRAWBUFFERSPROC) (GLsizei n, const GLenum *bufs);
 #endif
 static PFNGLDRAWBUFFERSPROC glDrawBuffers = NULL;
+
+#ifdef USE_DEPTH
+typedef void (APIENTRYP PFNGLGENRENDERBUFFERSPROC)(GLsizei n, GLuint* renderbuffers);
+typedef void (APIENTRYP PFNGLBINDRENDERBUFFERPROC)(GLenum target, GLuint renderbuffer);
+typedef void (APIENTRYP PFNGLRENDERBUFFERSTORAGEPROC)(GLenum target, GLenum internalformat, GLsizei width, GLsizei height);
+typedef void (APIENTRYP PFNGLDELETERENDERBUFFERSPROC)(GLsizei n, const GLuint* renderbuffers);
+static PFNGLGENRENDERBUFFERSPROC glGenRenderbuffers;
+static PFNGLBINDRENDERBUFFERPROC glBindRenderbuffer;
+static PFNGLRENDERBUFFERSTORAGEPROC glRenderbufferStorage;
+static PFNGLDELETERENDERBUFFERSPROC glDeleteRenderbuffers;
+#endif
 
 // Sync Objects https://www.opengl.org/wiki/Sync_Object
 #ifndef GL_ARB_sync
@@ -1366,6 +1377,7 @@ TestOpenGLPlugin::RENDERFUNC(const OFX::RenderArguments &args)
 
 #ifdef USE_OPENGL
     OpenGLContextData* contextData = &_openGLContextData;
+#ifdef OFX_EXTENSIONS_NATRON
     if (OFX::getImageEffectHostDescription()->isNatron && !args.openGLContextData) {
         DPRINT( ("ERROR: Natron did not provide the contextData pointer to the OpenGL render func.\n") );
     }
@@ -1374,7 +1386,9 @@ TestOpenGLPlugin::RENDERFUNC(const OFX::RenderArguments &args)
         // host provided kNatronOfxImageEffectPropOpenGLContextData,
         // which was returned by kOfxActionOpenGLContextAttached
         contextData = (OpenGLContextData*)args.openGLContextData;
-    } else if (!_openGLContextAttached) {
+    } else
+#endif
+    if (!_openGLContextAttached) {
         // Sony Catalyst Edit never calls kOfxActionOpenGLContextAttached
         DPRINT( ("ERROR: OpenGL render() called without calling contextAttached() first. Calling it now.\n") );
         contextAttached(false);
@@ -1416,7 +1430,11 @@ TestOpenGLPlugin::RENDERFUNC(const OFX::RenderArguments &args)
     GLuint dstTarget = GL_TEXTURE_2D;
     GLuint dstIndex = 0;
 #endif
-    if (!args.openGLEnabled) {
+    bool openGLEnabled = false;
+#ifdef OFX_SUPPORTS_OPENGLRENDER
+    openGLEnabled = args.openGLEnabled;
+#endif
+    if (!openGLEnabled) {
         // (OpenGL off-screen rendering or OSMesa)
         // load the source image into a texture
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
@@ -1576,7 +1594,7 @@ TestOpenGLPlugin::RENDERFUNC(const OFX::RenderArguments &args)
         // Non-power-of-two textures are supported if the GL version is 2.0 or greater, or if the implementation exports the GL_ARB_texture_non_power_of_two extension. (Mesa does, of course)
 
         OfxRectI srcBounds = src->getBounds();
-        glActiveTextureARB(GL_TEXTURE0_ARB);
+        glActiveTexture(GL_TEXTURE0);
         assert(srcIndex > 0);
         glBindTexture(srcTarget, srcIndex);
         // legacy mipmap generation was replaced by glGenerateMipmap from GL_ARB_framebuffer_object (see below)
@@ -1829,7 +1847,7 @@ TestOpenGLPlugin::RENDERFUNC(const OFX::RenderArguments &args)
     // END of the actual OpenGL rendering code
     //--------------------------------------------
 
-    if (!args.openGLEnabled) {
+    if (!openGLEnabled) {
         // (OpenGL off-screen rendering or OSMesa)
         /* This is very important!!!
          * Make sure buffered commands are finished!!!
@@ -1881,6 +1899,21 @@ TestOpenGLPlugin::RENDERFUNC(const OFX::RenderArguments &args)
     DPRINT( ( "rendering took %d us\n", 1000000 * (t2.tv_sec - t1.tv_sec) + (t2.tv_usec - t1.tv_usec) ) );
 #endif
 } // TestOpenGLPlugin::RENDERFUNC
+
+static
+std::string
+unsignedToString(unsigned i)
+{
+    if (i == 0) {
+        return "0";
+    }
+    std::string nb;
+    for (unsigned j = i; j != 0; j /= 10) {
+        nb = (char)( '0' + (j % 10) ) + nb;
+    }
+
+    return nb;
+}
 
 static
 void
@@ -2030,9 +2063,14 @@ TestOpenGLPlugin::contextAttached(bool createContextData)
     // Non-power-of-two textures are supported if the GL version is 2.0 or greater, or if the implementation exports the GL_ARB_texture_non_power_of_two extension. (Mesa does, of course)
     int major, minor;
     getGlVersion(&major, &minor);
+    std::string glVersion = unsignedToString((unsigned int)major) + '.' + unsignedToString((unsigned int)minor);
+    if (major == 0) {
+        sendMessage(OFX::Message::eMessageError, "", "Can not render: glGetString(GL_VERSION) failed.");
+        OFX::throwSuiteStatusException(kOfxStatFailed);
+    }
     if (major < 2) {
         if ( !glutExtensionSupported("GL_ARB_texture_non_power_of_two") ) {
-            sendMessage(OFX::Message::eMessageError, "", "Can not render: OpenGL 2.0 or GL_ARB_texture_non_power_of_two is required.");
+            sendMessage(OFX::Message::eMessageError, "", "Can not render: OpenGL 2.0 or GL_ARB_texture_non_power_of_two is required (this is OpenGL " + glVersion + ")");
             OFX::throwSuiteStatusException(kOfxStatFailed);
         }
     }
@@ -2129,7 +2167,7 @@ TestOpenGLPlugin::contextAttached(bool createContextData)
 
         // Multitexture
         // GL_VERSION_1_3
-        // glActiveTexture = (PFNGLACTIVETEXTUREARBPROC)getProcAddress("glActiveTexture", "glActiveTextureARB");
+        glActiveTexture = (PFNGLACTIVETEXTUREARBPROC)getProcAddress("glActiveTexture", "glActiveTextureARB");
         // GL_VERSION_1_3_DEPRECATED
         //glClientActiveTexture = (PFNGLCLIENTACTIVETEXTUREPROC)getProcAddress("glClientActiveTexture");
         //glMultiTexCoord2f = (PFNGLMULTITEXCOORD2FPROC)getProcAddress("glMultiTexCoord2f");
@@ -2148,6 +2186,17 @@ TestOpenGLPlugin::contextAttached(bool createContextData)
         //glGetFramebufferAttachmentParameteriv = (PFNGLGETFRAMEBUFFERATTACHMENTPARAMETERIVPROC)getProcAddress("glGetFramebufferAttachmentParameteriv", "glGetFramebufferAttachmentParameterivEXT", "glGetFramebufferAttachmentParameterivARB");
         glGenerateMipmap = (PFNGLGENERATEMIPMAPPROC)getProcAddress("glGenerateMipmap", "glGenerateMipmapEXT", "glGenerateMipmapARB");
         glDrawBuffers = (PFNGLDRAWBUFFERSPROC)getProcAddress("glDrawBuffers", "glDrawBuffersEXT", "glDrawBuffersARB");
+
+#ifdef USE_DEPTH
+        typedef void (APIENTRYP PFNGLGENRENDERBUFFERSPROC)(GLsizei n, GLuint* renderbuffers);
+        typedef void (APIENTRYP PFNGLBINDRENDERBUFFERPROC)(GLenum target, GLuint renderbuffer);
+        typedef void (APIENTRYP PFNGLRENDERBUFFERSTORAGEPROC)(GLenum target, GLenum internalformat, GLsizei width, GLsizei height);
+        typedef void (APIENTRYP PFNGLDELETERENDERBUFFERSPROC)(GLsizei n, const GLuint* renderbuffers);
+        glGenRenderbuffers= (PFNGLGENRENDERBUFFERSPROC)getProcAddress("glGenRenderbuffers", "glGenRenderbuffersEXT", "glGenRenderbuffersARB");
+        glBindRenderbuffer = (PFNGLBINDRENDERBUFFERPROC)getProcAddress("glBindRenderbuffer", "glBindRenderbufferEXT", "glBindRenderbufferARB");
+        glRenderbufferStorage = (PFNGLRENDERBUFFERSTORAGEPROC)getProcAddress("glRenderbufferStorage", "glRenderbufferStorageEXT", "glRenderbufferStorageARB");
+        glDeleteRenderbuffers = (PFNGLDELETERENDERBUFFERSPROC)getProcAddress("glDeleteRenderbuffers", "glDeleteRenderbuffersEXT", "glDeleteRenderbuffersARB");
+#endif
 
         // GL_ARB_sync
         // Sync Objects https://www.opengl.org/wiki/Sync_Object

@@ -50,17 +50,20 @@ pull_requests:
 #---------------------------------#
 
 # Operating system (build VM template)
-os: Visual Studio 2017
+image:
+- Visual Studio 2017
+#- Ubuntu
 
 # scripts that are called at very beginning, before repo cloning
 init:
-  - git config --global core.autocrlf input
+  - cmd: git config --global core.autocrlf input
   - set arch=
   - if "%PLATFORM%" == "x64" (set arch= Win64)
   - if "%PLATFORM%" == "x86" (set arch=)
   - if "%APPVEYOR_BUILD_WORKER_IMAGE%" == "Visual Studio 2017" (set GENERATOR="Visual Studio 15 2017%arch%")
   - if "%APPVEYOR_BUILD_WORKER_IMAGE%" == "Visual Studio 2015" (set GENERATOR="Visual Studio 14 2015%arch%")
   - if "%APPVEYOR_BUILD_WORKER_IMAGE%" == "Visual Studio 2013" (set GENERATOR="Visual Studio 12 2013%arch%")
+  - if "%APPVEYOR_BUILD_WORKER_IMAGE%" == "Ubuntu" (set GENERATOR="Unix Makefiles")
 
 
 # clone directory
@@ -74,7 +77,16 @@ clone_folder: c:\dev\openfx-misc
 
 # scripts that run after cloning repository
 install:
+  # Dump appveyor build vars for diagnostics
+  - cmd: "ECHO APPVEYOR_FORCED_BUILD: %APPVEYOR_FORCED_BUILD%"
+  - cmd: "ECHO APPVEYOR_RE_BUILD: %APPVEYOR_RE_BUILD%"
+  # Verify that patch command is available
+  - cmd: "where patch"
+
   - git submodule -q update --init --recursive
+  - curl -L -s -S -o CImg/CImg.h https://raw.githubusercontent.com/dtschump/CImg/a841cc3080ee7bc00c5781e94b7f06c2920453ac/CImg.h
+  - curl -L -s -S -o CImg/Inpaint/inpaint.h https://raw.githubusercontent.com/dtschump/CImg/a841cc3080ee7bc00c5781e94b7f06c2920453ac/plugins/inpaint.h
+  - patch -p0 -dCImg < CImg/Inpaint/inpaint.h.patch
 
 #---------------------------------#
 #       build configuration       #
@@ -91,7 +103,8 @@ configuration:
 before_build:
   - mkdir build
   - cd build
-  - cmake .. -G %GENERATOR% -DCMAKE_INSTALL_PREFIX="c:/dev/openfx-misc/install/Misc.ofx.bundle"
+  - cmd: cmake .. -G %GENERATOR% -DCMAKE_INSTALL_PREFIX="c:/dev/openfx-misc/install"
+  - sh: cmake .. -DCMAKE_INSTALL_PREFIX="c:/dev/openfx-misc/install" -DCMAKE_BUILD_TYPE=%configuration%
 
 # scripts to run after build
 #after_build:
@@ -156,8 +169,8 @@ artifacts:
 deploy:
   - provider: Environment
     name: openfx-misc
-    release: ofxmisc-$(appveyor_repo_branch)-v$(appveyor_build_version)
-    artifact: ofxmisc-$(appveyor_repo_branch).zip
+    release: openfx-misc-$(appveyor_repo_branch)-v$(appveyor_build_version)
+    artifact: openfx-misc-$(appveyor_repo_branch).zip
     draft: false
     prerelease: true
     on:

@@ -71,6 +71,7 @@
 #include "ofxsThreadSuite.h"
 #include "ofxsMultiThread.h"
 #include "ofxsCopier.h"
+#include "ofxOld.h"
 #ifdef OFX_USE_MULTITHREAD_MUTEX
 namespace {
 typedef MultiThread::Mutex Mutex;
@@ -382,6 +383,7 @@ enum ColorModelEnum
 #endif
 
 static bool gHostSupportsDefaultCoordinateSystem = true; // for kParamDefaultsNormalised
+static bool gHostIsResolve = false;
 
 // those are the noise levels on HHi subands that correspond to a
 // Gaussian noise, with the dcraw "a trous" wavelets.
@@ -1074,7 +1076,7 @@ inline
 int
 startLevelFromRenderScale(const OfxPointD& renderScale)
 {
-    double s = std::min(renderScale.x, renderScale.y);
+    double s = (std::min)(renderScale.x, renderScale.y);
 
     assert(0. < s && s <= 1.);
     int retval = -(int)std::floor(std::log(s) / M_LN2);
@@ -1187,10 +1189,10 @@ public:
     void process(void)
     {
         // make sure there are at least 4096 pixels per CPU and at least 1 line par CPU
-        unsigned int nCPUs = ( std::min(rows ? _iwidth : _iheight, 4096u) * (rows ? _iheight : _iwidth) ) / 4096u;
+        unsigned int nCPUs = ( (std::min)(rows ? _iwidth : _iheight, 4096u) * (rows ? _iheight : _iwidth) ) / 4096u;
 
         // make sure the number of CPUs is valid (and use at least 1 CPU)
-        nCPUs = std::max( 1u, std::min( nCPUs, MultiThread::getNumCPUs() ) );
+        nCPUs = (std::max)( 1u, (std::min)( nCPUs, MultiThread::getNumCPUs() ) );
 
         // call the base multi threading code, should put a pre & post thread calls in too
         multiThread(nCPUs);
@@ -1374,7 +1376,7 @@ public:
         unsigned int nCPUs = _size / 4096u;
 
         // make sure the number of CPUs is valid (and use at least 1 CPU)
-        nCPUs = std::max( 1u, std::min( nCPUs, MultiThread::getNumCPUs() ) );
+        nCPUs = (std::max)( 1u, (std::min)( nCPUs, MultiThread::getNumCPUs() ) );
 
         // call the base multi threading code, should put a pre & post thread calls in too
         multiThread(nCPUs);
@@ -1453,7 +1455,7 @@ public:
         unsigned int nCPUs = _size / 4096u;
 
         // make sure the number of CPUs is valid (and use at least 1 CPU)
-        nCPUs = std::max( 1u, std::min( nCPUs, MultiThread::getNumCPUs() ) );
+        nCPUs = (std::max)( 1u, (std::min)( nCPUs, MultiThread::getNumCPUs() ) );
 
         // call the base multi threading code, should put a pre & post thread calls in too
         multiThread(nCPUs);
@@ -1513,10 +1515,10 @@ public:
     void process(void)
     {
         // make sure there are at least 4096 pixels per CPU and at least 1 line par CPU
-        unsigned int nCPUs = ( std::min(_iwidth, 4096u) * _iheight ) / 4096u;
+        unsigned int nCPUs = ( (std::min)(_iwidth, 4096u) * _iheight ) / 4096u;
 
         // make sure the number of CPUs is valid (and use at least 1 CPU)
-        nCPUs = std::max( 1u, std::min( nCPUs, MultiThread::getNumCPUs() ) );
+        nCPUs = (std::max)( 1u, (std::min)( nCPUs, MultiThread::getNumCPUs() ) );
 
         // call the base multi threading code, should put a pre & post thread calls in too
         multiThread(nCPUs);
@@ -1581,10 +1583,10 @@ public:
     void process(void)
     {
         // make sure there are at least 4096 pixels per CPU and at least 1 column per CPU
-        unsigned int nCPUs = ( std::min(_iheight, 4096u) * _iwidth ) / 4096u;
+        unsigned int nCPUs = ( (std::min)(_iheight, 4096u) * _iwidth ) / 4096u;
 
         // make sure the number of CPUs is valid (and use at least 1 CPU)
-        nCPUs = std::max( 1u, std::min( nCPUs, MultiThread::getNumCPUs() ) );
+        nCPUs = (std::max)( 1u, (std::min)( nCPUs, MultiThread::getNumCPUs() ) );
 
         // call the base multi threading code, should put a pre & post thread calls in too
         multiThread(nCPUs);
@@ -1655,10 +1657,10 @@ public:
     void process(void)
     {
         // make sure there are at least 4096 pixels per CPU and at least 1 line par CPU
-        unsigned int nCPUs = ( std::min(_iwidth, 4096u) * _iheight ) / 4096u;
+        unsigned int nCPUs = ( (std::min)(_iwidth, 4096u) * _iheight ) / 4096u;
 
         // make sure the number of CPUs is valid (and use at least 1 CPU)
-        nCPUs = std::max( 1u, std::min( nCPUs, MultiThread::getNumCPUs() ) );
+        nCPUs = (std::max)( 1u, (std::min)( nCPUs, MultiThread::getNumCPUs() ) );
 
         // call the base multi threading code, should put a pre & post thread calls in too
         multiThread(nCPUs);
@@ -1681,12 +1683,12 @@ private:
                 return;
             }
             // summed area table (sat) rows
-            int row_sat_up = std::max(row - 1 - _adaptiveRadiusPixel, -1);
-            int row_sat_down = std::min(row + _adaptiveRadiusPixel, (int)_iheight - 1);
+            int row_sat_up = (std::max)(row - 1 - _adaptiveRadiusPixel, -1);
+            int row_sat_down = (std::min)(row + _adaptiveRadiusPixel, (int)_iheight - 1);
             int row_sat_size = row_sat_down - row_sat_up;
             for (unsigned int col = 0; col < _iwidth; ++col) {
-                int col_sat_left = std::max( (int)col - 1 - _adaptiveRadiusPixel, -1 );
-                int col_sat_right = std::min( (int)col + _adaptiveRadiusPixel, (int)_iwidth - 1 );
+                int col_sat_left = (std::max)( (int)col - 1 - _adaptiveRadiusPixel, -1 );
+                int col_sat_right = (std::min)( (int)col + _adaptiveRadiusPixel, (int)_iwidth - 1 );
                 int col_sat_size = col_sat_right - col_sat_left;
                 double sumsq = ( _fimg_sat[row_sat_down * _iwidth + col_sat_right]
                                  - (row_sat_up >= 0 ? _fimg_sat[row_sat_up * _iwidth + col_sat_right] : 0.)
@@ -1697,7 +1699,7 @@ private:
                 float fimg_denoised = _fimg_hpass[i];
 
                 // apply smooth threshold
-                float thold = _sigma_n_i_sq / std::sqrt( std::max(1e-30, sumsq / sumsqsize - _sigma_n_i_sq) );
+                float thold = _sigma_n_i_sq / std::sqrt( (std::max)(1e-30, sumsq / sumsqsize - _sigma_n_i_sq) );
 
                 if (_fimg_hpass[i] < -thold) {
                     _fimg_hpass[i] += thold * _denoise_amount;
@@ -1944,7 +1946,7 @@ DenoiseSharpenPlugin::wavelet_denoise(float *fimg[4], //!< fimg[0] is the channe
         if (adaptiveRadius <= 0) {
             assert(sumsqsize > 0);
             // use the signal level computed from the whole image
-            float thold = sigma_n_i_sq / std::sqrt( std::max(1e-30, sumsq / sumsqsize - sigma_n_i_sq) );
+            float thold = sigma_n_i_sq / std::sqrt( (std::max)(1e-30, sumsq / sumsqsize - sigma_n_i_sq) );
 
 #ifdef kUseMultithread
             {
@@ -2035,12 +2037,12 @@ DenoiseSharpenPlugin::wavelet_denoise(float *fimg[4], //!< fimg[0] is the channe
             for (unsigned int row = 0; row < iheight; ++row) {
                 abort_test_loop();
                 // summed area table (sat) rows
-                int row_sat_up = std::max( (int)row - 1 - adaptiveRadiusPixel, -1 );
-                int row_sat_down = std::min( (int)row + adaptiveRadiusPixel, (int)iheight - 1 );
+                int row_sat_up = (std::max)( (int)row - 1 - adaptiveRadiusPixel, -1 );
+                int row_sat_down = (std::min)( (int)row + adaptiveRadiusPixel, (int)iheight - 1 );
                 int row_sat_size = row_sat_down - row_sat_up;
                 for (unsigned int col = 0; col < iwidth; ++col) {
-                    int col_sat_left = std::max( (int)col - 1 - adaptiveRadiusPixel, -1 );
-                    int col_sat_right = std::min( (int)col + adaptiveRadiusPixel, (int)iwidth - 1 );
+                    int col_sat_left = (std::max)( (int)col - 1 - adaptiveRadiusPixel, -1 );
+                    int col_sat_right = (std::min)( (int)col + adaptiveRadiusPixel, (int)iwidth - 1 );
                     int col_sat_size = col_sat_right - col_sat_left;
                     double sumsq = ( fimg_sat[row_sat_down * iwidth + col_sat_right]
                                      - (row_sat_up >= 0 ? fimg_sat[row_sat_up * iwidth + col_sat_right] : 0.)
@@ -2051,7 +2053,7 @@ DenoiseSharpenPlugin::wavelet_denoise(float *fimg[4], //!< fimg[0] is the channe
                     float fimg_denoised = fimg[hpass][i];
 
                     // apply smooth threshold
-                    float thold = sigma_n_i_sq / std::sqrt( std::max(1e-30, sumsq / sumsqsize - sigma_n_i_sq) );
+                    float thold = sigma_n_i_sq / std::sqrt( (std::max)(1e-30, sumsq / sumsqsize - sigma_n_i_sq) );
 
                     if (fimg[hpass][i] < -thold) {
                         fimg[hpass][i] += thold * denoise_amount;
@@ -2214,7 +2216,7 @@ DenoiseSharpenPlugin::render(const RenderArguments &args)
 #ifdef _OPENMP
     // set the number of OpenMP threads to a reasonable value
     // (but remember that the OpenMP threads are not counted my the multithread suite)
-    omp_set_num_threads( std::max(1u, MultiThread::getNumCPUs() ) );
+    omp_set_num_threads( (std::max)(1u, MultiThread::getNumCPUs() ) );
 #endif
     DBG(cout << "render! with " << MultiThread::getNumCPUs() << " CPUs\n");
 
@@ -2308,9 +2310,10 @@ DenoiseSharpenPlugin::setup(const RenderArguments &args,
         setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong depth or components");
         throwSuiteStatusException(kOfxStatFailed);
     }
-    if ( (dst->getRenderScale().x != args.renderScale.x) ||
-         ( dst->getRenderScale().y != args.renderScale.y) ||
-         ( ( dst->getField() != eFieldNone) /* for DaVinci Resolve */ && ( dst->getField() != args.fieldToRender) ) ) {
+    if ( !gHostIsResolve && /* DaVinci Resolve always gives rs=1 & field=None on fetched images */
+        ( (dst->getRenderScale().x != args.renderScale.x) ||
+          (dst->getRenderScale().y != args.renderScale.y) ||
+          (dst->getField() != args.fieldToRender) ) ) {
         setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
         throwSuiteStatusException(kOfxStatFailed);
     }
@@ -2320,9 +2323,10 @@ DenoiseSharpenPlugin::setup(const RenderArguments &args,
         throwSuiteStatusException(kOfxStatFailed);
     }
     if ( src.get() ) {
-        if ( (src->getRenderScale().x != args.renderScale.x) ||
-             ( src->getRenderScale().y != args.renderScale.y) ||
-             ( ( src->getField() != eFieldNone) /* for DaVinci Resolve */ && ( src->getField() != args.fieldToRender) ) ) {
+        if ( !gHostIsResolve && /* DaVinci Resolve always gives rs=1 & field=None on fetched images */
+            ( (src->getRenderScale().x != args.renderScale.x) ||
+              (src->getRenderScale().y != args.renderScale.y) ||
+              (src->getField() != args.fieldToRender) ) ) {
             setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
             throwSuiteStatusException(kOfxStatFailed);
         }
@@ -2335,9 +2339,10 @@ DenoiseSharpenPlugin::setup(const RenderArguments &args,
     p.doMasking = ( ( !_maskApply || _maskApply->getValueAtTime(time) ) && _maskClip && _maskClip->isConnected() );
     mask.reset(p.doMasking ? _maskClip->fetchImage(time) : 0);
     if ( mask.get() ) {
-        if ( (mask->getRenderScale().x != args.renderScale.x) ||
-             ( mask->getRenderScale().y != args.renderScale.y) ||
-             ( ( mask->getField() != eFieldNone) /* for DaVinci Resolve */ && ( mask->getField() != args.fieldToRender) ) ) {
+        if ( !gHostIsResolve && /* DaVinci Resolve always gives rs=1 & field=None on fetched images */
+            ( (mask->getRenderScale().x != args.renderScale.x) ||
+              (mask->getRenderScale().y != args.renderScale.y) ||
+              (mask->getField() != args.fieldToRender) ) ) {
             setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
             throwSuiteStatusException(kOfxStatFailed);
         }
@@ -2361,8 +2366,8 @@ DenoiseSharpenPlugin::setup(const RenderArguments &args,
         return;
 
     }
-    p.premult = _premult->getValueAtTime(time);
-    p.premultChannel = _premultChannel->getValueAtTime(time);
+    p.premult = _premult ? _premult->getValueAtTime(time) : false;
+    p.premultChannel = (p.premult && _premultChannel) ? _premultChannel->getValueAtTime(time) : 3;
     p.mix = _mix->getValueAtTime(time);
 
     p.process[0] = _processR->getValueAtTime(time);
@@ -2433,7 +2438,7 @@ DenoiseSharpenPlugin::setup(const RenderArguments &args,
                                        p.noiseLevel[3][3] > 0) && p.denoise_amount[3] > 0.) || p.sharpen_amount[3] > 0. );
 
     // compute the number of levels (max is 4, which adds 1<<4 = 16 pixels on each side)
-    int maxLev = std::max( 0, kLevelMax - startLevelFromRenderScale(args.renderScale) );
+    int maxLev = (std::max)( 0, kLevelMax - startLevelFromRenderScale(args.renderScale) );
     int border = borderSize(p.adaptiveRadius, p.b3, maxLev + 1);
     p.srcWindow.x1 = args.renderWindow.x1 - border;
     p.srcWindow.y1 = args.renderWindow.y1 - border;
@@ -2899,6 +2904,9 @@ DenoiseSharpenPlugin::analyzeNoiseLevels(const InstanceChangedArgs &args)
     assert(args.renderScale.x == 1. && args.renderScale.y == 1.);
 
     progressStartAnalysis(kPluginName " (noise analysis)");
+# ifdef kOfxImageEffectPropInAnalysis // removed from OFX 1.4
+    getPropertySet().propSetInt(kOfxImageEffectPropInAnalysis, 1, false);
+# endif
     beginEditBlock(kParamAnalyzeNoiseLevels);
 
     // instantiate the render code based on the pixel depth of the dst clip
@@ -2909,7 +2917,7 @@ DenoiseSharpenPlugin::analyzeNoiseLevels(const InstanceChangedArgs &args)
 #ifdef _OPENMP
     // set the number of OpenMP threads to a reasonable value
     // (but remember that the OpenMP threads are not counted my the multithread suite)
-    omp_set_num_threads( std::max(1u, MultiThread::getNumCPUs() ) );
+    omp_set_num_threads( (std::max)(1u, MultiThread::getNumCPUs() ) );
 #endif
 
     assert( kSupportsMultipleClipPARs   || !_srcClip || _srcClip->getPixelAspectRatio() == _dstClip->getPixelAspectRatio() );
@@ -2944,6 +2952,9 @@ DenoiseSharpenPlugin::analyzeNoiseLevels(const InstanceChangedArgs &args)
     _analysisLock->setValue(true);
     endEditBlock();
     progressEndAnalysis();
+# ifdef kOfxImageEffectPropInAnalysis // removed from OFX 1.4
+    getPropertySet().propSetInt(kOfxImageEffectPropInAnalysis, 0, false);
+# endif
 
     DBG(cout << "analysis! OK\n");
 }
@@ -2981,14 +2992,21 @@ DenoiseSharpenPlugin::analyzeNoiseLevelsForBitDepth(const InstanceChangedArgs &a
     assert(args.renderScale.x == 1. && args.renderScale.y == 1.);
     const double time = args.time;
 
+    OfxRectD cropRect;
+    _btmLeft->getValueAtTime(time, cropRect.x1, cropRect.y1);
+    double w, h;
+    _size->getValueAtTime(time, w, h);
+    cropRect.x2 = cropRect.x1 + w;
+    cropRect.y2 = cropRect.y1 + h;
+
     auto_ptr<const Image> src;
     auto_ptr<const Image> mask;
 
     if ( _analysisSrcClip && _analysisSrcClip->isConnected() ) {
-        src.reset( _analysisSrcClip->fetchImage(time) );
+        src.reset( _analysisSrcClip->fetchImage(time, cropRect) );
     } else {
         src.reset( ( _srcClip && _srcClip->isConnected() ) ?
-                   _srcClip->fetchImage(time) : 0 );
+                   _srcClip->fetchImage(time, cropRect) : 0 );
     }
     if ( src.get() ) {
         if ( (src->getRenderScale().x != args.renderScale.x) ||
@@ -2998,7 +3016,7 @@ DenoiseSharpenPlugin::analyzeNoiseLevelsForBitDepth(const InstanceChangedArgs &a
         }
     }
     bool doMasking = _analysisMaskClip && _analysisMaskClip->isConnected();
-    mask.reset(doMasking ? _analysisMaskClip->fetchImage(time) : 0);
+    mask.reset(doMasking ? _analysisMaskClip->fetchImage(time, cropRect) : 0);
     if ( mask.get() ) {
         if ( (mask->getRenderScale().x != args.renderScale.x) ||
              ( mask->getRenderScale().y != args.renderScale.y) ) {
@@ -3012,16 +3030,10 @@ DenoiseSharpenPlugin::analyzeNoiseLevelsForBitDepth(const InstanceChangedArgs &a
     }
 
     bool maskInvert = doMasking ? _maskInvert->getValueAtTime(time) : false;
-    bool premult = _premult->getValueAtTime(time);
-    int premultChannel = _premultChannel->getValueAtTime(time);
+    bool premult = _premult ? _premult->getValueAtTime(time) : false;
+    int premultChannel = (premult && _premultChannel) ? _premultChannel->getValueAtTime(time) : 3;
     ColorModelEnum colorModel = (ColorModelEnum)_colorModel->getValueAtTime(time);
     bool b3 = _b3->getValueAtTime(time);
-    OfxRectD cropRect;
-    _btmLeft->getValueAtTime(time, cropRect.x1, cropRect.y1);
-    double w, h;
-    _size->getValueAtTime(time, w, h);
-    cropRect.x2 = cropRect.x1 + w;
-    cropRect.y2 = cropRect.y1 + h;
 
     OfxRectI cropRectI;
     cropRectI.x1 = std::ceil(cropRect.x1);
@@ -3234,6 +3246,9 @@ DenoiseSharpenPluginFactory::describeInContext(ImageEffectDescriptor &desc,
 {
     DBG(cout << "describeInContext!\n");
 
+    const ImageEffectHostDescription &gHostDescription = *getImageEffectHostDescription();
+    gHostIsResolve = (gHostDescription.hostName.substr(0, 14) == "DaVinciResolve");  // Resolve gives bad image properties
+
     // Source clip only in the filter context
     // create the mandated source clip
     ClipDescriptor *srcClip = desc.defineClip(kOfxImageEffectSimpleSourceClipName);
@@ -3416,6 +3431,9 @@ DenoiseSharpenPluginFactory::describeInContext(ImageEffectDescriptor &desc,
             param->setDefault(false);
             param->setEvaluateOnChange(true); // changes the output mode
             param->setAnimates(false);
+#     ifdef kOfxParamPropPluginMayWrite // removed from OFX 1.4
+            param->getPropertySet().propSetInt(kOfxParamPropPluginMayWrite, 1, false);
+#     endif
             if (group) {
                 param->setParent(*group);
             }
@@ -3497,6 +3515,9 @@ DenoiseSharpenPluginFactory::describeInContext(ImageEffectDescriptor &desc,
             param->setEnabled(false);
             param->setAnimates(false);
             param->setEvaluateOnChange(false);
+#     ifdef kOfxParamPropPluginMayWrite // removed from OFX 1.4
+            param->getPropertySet().propSetInt(kOfxParamPropPluginMayWrite, 1, false);
+#     endif
             param->setDefault(-1);
             if (group) {
                 param->setParent(*group);
@@ -3539,6 +3560,9 @@ DenoiseSharpenPluginFactory::describeInContext(ImageEffectDescriptor &desc,
                 param->setRange(0, DBL_MAX);
                 param->setDisplayRange(0, kParamNoiseLevelMax);
                 param->setAnimates(true);
+#     ifdef kOfxParamPropPluginMayWrite // removed from OFX 1.4
+                param->getPropertySet().propSetInt(kOfxParamPropPluginMayWrite, 1, false);
+#     endif
                 if (group) {
                     param->setParent(*group);
                 }

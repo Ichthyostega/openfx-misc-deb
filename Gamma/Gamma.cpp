@@ -161,10 +161,10 @@ public:
         _processG = processG;
         _processB = processB;
         _processA = processA;
-        _value.r = invert ? value.r : ( 1. / std::max(1e-8, value.r) );
-        _value.g = invert ? value.g : ( 1. / std::max(1e-8, value.g) );
-        _value.b = invert ? value.b : ( 1. / std::max(1e-8, value.b) );
-        _value.a = invert ? value.a : ( 1. / std::max(1e-8, value.a) );
+        _value.r = invert ? value.r : ( 1. / (std::max)(1e-8, value.r) );
+        _value.g = invert ? value.g : ( 1. / (std::max)(1e-8, value.g) );
+        _value.b = invert ? value.b : ( 1. / (std::max)(1e-8, value.b) );
+        _value.a = invert ? value.a : ( 1. / (std::max)(1e-8, value.a) );
         _premult = premult;
         _premultChannel = premultChannel;
         _mix = mix;
@@ -466,8 +466,8 @@ GammaPlugin::setupAndProcess(GammaProcessorBase &processor,
     bool processA = _processA->getValueAtTime(time);
     RGBAValues value;
     _value->getValueAtTime(time, value.r, value.g, value.b, value.a);
-    bool premult = _premult->getValueAtTime(time);
-    int premultChannel = _premultChannel->getValueAtTime(time);
+    bool premult = _premult ? _premult->getValueAtTime(time) : false;
+    int premultChannel = (premult && _premultChannel) ? _premultChannel->getValueAtTime(time) : 3;
     double mix = _mix->getValueAtTime(time);
     bool invert = _invert->getValueAtTime(time);
     processor.setValues(processR, processG, processB, processA,
