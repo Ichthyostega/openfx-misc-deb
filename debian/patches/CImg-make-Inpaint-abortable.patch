@@ -1,19 +1,21 @@
-From: Frédéric Devernay <frederic.devernay@m4x.org>
-Date: 2019-08-27 21:51:16 -0700
+From: =?utf-8?q?Fr=C3=A9d=C3=A9ric_Devernay?= <frederic.devernay@m4x.org>
+Date: Tue, 27 Aug 2019 21:51:16 -0700
 Subject: CImg - make Inpaint abortable
 
 Extracted from https://github.com/NatronGitHub/openfx-misc.git
+See File: CImg/Inpaint/inpaint.h.patch
 
 Initial revision: c450e23bba0a
 Last revision (CImg: update to 2.7.0) 9db7c40aa0cd5e9
-
 ---
+ CImg/Inpaint/inpaint.h | 15 +++++++++++++--
+ 1 file changed, 13 insertions(+), 2 deletions(-)
 
-Index: b/CImg/Inpaint/inpaint.h
-===================================================================
+diff --git a/CImg/Inpaint/inpaint.h b/CImg/Inpaint/inpaint.h
+index d7083f9..5c3c892 100644
 --- a/CImg/Inpaint/inpaint.h
 +++ b/CImg/Inpaint/inpaint.h
-@@ -103,6 +103,7 @@ CImg<T>& inpaint_patch(const CImg<t>& ma
+@@ -103,6 +103,7 @@ CImg<T>& inpaint_patch(const CImg<t>& mask, const unsigned int patch_size=11,
    // Find (dilated by 2) bounding box for the inpainting mask.
    unsigned int xm0 = _width, ym0 = _height, xm1 = 0, ym1 = 0;
    bool is_mask_found = false;
@@ -21,18 +23,18 @@ Index: b/CImg/Inpaint/inpaint.h
    cimg_forXY(mask,x,y) if (mask(x,y)) {
      is_mask_found = true;
      if (x<(int)xm0) xm0 = (unsigned int)x;
-@@ -139,7 +140,10 @@ CImg<T>& inpaint_patch(const CImg<t>& ma
+@@ -139,7 +140,10 @@ CImg<T>& inpaint_patch(const CImg<t>& mask, const unsigned int patch_size=11,
    weights.draw_gaussian((float)p1,(float)p1,patch_size/15.0f,&one)/=patch_size2;
    unsigned int target_index = 0;
  
-+  _cimg_abort_init_omp;
++  _cimg_abort_init_openmp;
 +  cimg_abort_init;
    while (true) {
 +    cimg_abort_test;
  
      // Extract mask border points and compute priorities to find target point.
      unsigned int nb_border_points = 0;
-@@ -416,6 +420,7 @@ CImg<T>& inpaint_patch(const CImg<t>& ma
+@@ -416,6 +420,7 @@ CImg<T>& inpaint_patch(const CImg<t>& mask, const unsigned int patch_size=11,
      // Generate blending scales.
      CImg<T> result = _inpaint_patch_crop(ox,oy,ox + dx - 1,oy + dy - 1,0);
      for (unsigned int blend_iter = 1; blend_iter<=blend_scales; ++blend_iter) {
@@ -40,7 +42,7 @@ Index: b/CImg/Inpaint/inpaint.h
        const unsigned int
          _blend_width = blend_iter*blend_size/blend_scales,
          blend_width = _blend_width?_blend_width + 1 - (_blend_width%2):0;
-@@ -454,19 +459,25 @@ CImg<T>& inpaint_patch(const CImg<t>& ma
+@@ -454,19 +459,25 @@ CImg<T>& inpaint_patch(const CImg<t>& mask, const unsigned int patch_size=11,
        }
  
        if (is_blend_outer) {
