@@ -1,3 +1,13 @@
+openfx-misc-natron-dmo (2.3.14-dmo1.2~buster) Lumiera-buster-tool; urgency=low
+
+  * Rebuild for use on Debian/Buster(stable)
+  * add missing dependency: pkg-config
+  * Patch to prevent the build from downloading and patching CImg sources.
+  * Instead provide those sources directly as patch.
+  * lower debhelper compat (to 10) for backporting
+
+ -- Hermann Vosseler <deb@ichthyostega.de>  Sun, 19 Jan 2020 22:20:20 +0100
+
 openfx-misc-natron-dmo (2.3.14-dmo1) unstable; urgency=medium
 
   * New upstream release.

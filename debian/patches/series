@@ -1,1 +1,4 @@
 01_plugins-path.diff
+CImg--no-downloads-please.patch
+provide-CImg-2.3.3.patch
+CImg-make-Inpaint-abortable.patch

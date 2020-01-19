@@ -2,10 +2,13 @@ Source: openfx-misc-natron-dmo
 Section: video
 Priority: optional
 Maintainer: Christian Marillat <marillat@deb-multimedia.org>
+Uploaders: Hermann Vosseler <deb@ichthyostega.de>
 Bugs: mailto:marillat@deb-multimedia.org
 Homepage: https://github.com/NatronGitHub/openfx-misc
 Standards-Version: 4.1.5
-Build-Depends: debhelper (>= 11), libgl1-mesa-dev, quilt
+Build-Depends: debhelper (>= 10~),
+	libgl1-mesa-dev,
+	pkg-config
 
 Package: openfx-misc-natron
 Architecture: any

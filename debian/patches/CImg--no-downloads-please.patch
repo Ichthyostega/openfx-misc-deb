@@ -1,0 +1,49 @@
+From: Ichthyostega <deb@ichthyostega.de>
+Date: Mon, 20 Jan 2020 7:13:55 +0100
+Subject: CImg -- no downloads please
+
+We want a debian build to use the sources provided in the archive,
+and not to download sourcecode silently from further sources in the net.
+
+As workaround, the missing content will be supplied via debian/patches
+---
+
+Index: b/CImg/Makefile
+===================================================================
+--- a/CImg/Makefile
++++ b/CImg/Makefile
+@@ -146,19 +146,23 @@ endif
+ # commit a841cc3080ee7bc00c5781e94b7f06c2920453ac is CImg 2.2.3+
+ # commit 4d54d452896fdf9347af68d3854f98f4986eea4c is CImg 2.3.1
+ # commit 548744b47c9316f656c4bdd1206e78646226c6be is CImg 2.3.3
+-CIMGVERSION=548744b47c9316f656c4bdd1206e78646226c6be
+ 
+-CImg.h: Inpaint/inpaint.h
+-	curl -L -s -S -o $@ https://raw.githubusercontent.com/dtschump/CImg/$(CIMGVERSION)/CImg.h
+-#	patch -p0 -d. < CImg-2.0.0-anisotropic.patch
+-#	patch -p0 -d. < CImg-1.7.1-omp.patch
+-
+-Inpaint/inpaint.h:
+-	curl -L -s -S -o $@ https://raw.githubusercontent.com/dtschump/CImg/$(CIMGVERSION)/plugins/inpaint.h
+-	patch -p0 -d. < Inpaint/inpaint.h.patch
++##CIMGVERSION=548744b47c9316f656c4bdd1206e78646226c6be
++## DEB: code in this version now provided via debian/patches
+ 
+-nlmeans.h:
+-	curl -L -s -S -o $@ https://raw.githubusercontent.com/dtschump/CImg/$(CIMGVERSION)/plugins/nlmeans.h
++##CImg.h: Inpaint/inpaint.h
++#   # No downloads of random code from the Internez for a Debian build please!
++#
++##	curl -L -s -S -o $@ https://raw.githubusercontent.com/dtschump/CImg/$(CIMGVERSION)/CImg.h
++
++##Inpaint/inpaint.h:
++##	curl -L -s -S -o $@ https://raw.githubusercontent.com/dtschump/CImg/$(CIMGVERSION)/plugins/inpaint.h
++#
++#   DEB: the following patch is applied via debian/patches (makes cleaning simpler)
++##	patch -p0 -d. < Inpaint/inpaint.h.patch
++
++##nlmeans.h:
++##	curl -L -s -S -o $@ https://raw.githubusercontent.com/dtschump/CImg/$(CIMGVERSION)/plugins/nlmeans.h
+ 
+ #git archive --remote=git://git.code.sf.net/p/gmic/source $(CIMGVERSION):src CImg.h | tar xf -
+ 
