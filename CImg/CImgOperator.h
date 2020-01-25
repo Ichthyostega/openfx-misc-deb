@@ -136,9 +136,11 @@ template <class Params>
 void
 CImgOperatorPluginHelper<Params>::render(const OFX::RenderArguments &args)
 {
+# ifndef NDEBUG
     if ( !_supportsRenderScale && ( (args.renderScale.x != 1.) || (args.renderScale.y != 1.) ) ) {
         OFX::throwSuiteStatusException(kOfxStatFailed);
     }
+# endif
 
     const double time = args.time;
     const OfxPointD& renderScale = args.renderScale;
@@ -147,12 +149,7 @@ CImgOperatorPluginHelper<Params>::render(const OFX::RenderArguments &args)
     if ( !dst.get() ) {
         OFX::throwSuiteStatusException(kOfxStatFailed);
     }
-    if ( (dst->getRenderScale().x != renderScale.x) ||
-         ( dst->getRenderScale().y != renderScale.y) ||
-         ( ( dst->getField() != OFX::eFieldNone) /* for DaVinci Resolve */ && ( dst->getField() != args.fieldToRender) ) ) {
-        setPersistentMessage(OFX::Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-        OFX::throwSuiteStatusException(kOfxStatFailed);
-    }
+    checkBadRenderScaleOrField(dst, args);
     const OFX::BitDepthEnum dstBitDepth       = dst->getPixelDepth();
     const OFX::PixelComponentEnum dstPixelComponents  = dst->getPixelComponents();
     const int dstPixelComponentCount = dst->getPixelComponentCount();
@@ -160,19 +157,16 @@ CImgOperatorPluginHelper<Params>::render(const OFX::RenderArguments &args)
 
     OFX::auto_ptr<const OFX::Image> srcA( ( _srcAClip && _srcAClip->isConnected() ) ?
                                           _srcAClip->fetchImage(args.time) : 0 );
+# ifndef NDEBUG
     if ( srcA.get() ) {
         OFX::BitDepthEnum srcABitDepth      = srcA->getPixelDepth();
         OFX::PixelComponentEnum srcAPixelComponents = srcA->getPixelComponents();
         if ( (srcABitDepth != dstBitDepth) || (srcAPixelComponents != dstPixelComponents) ) {
             OFX::throwSuiteStatusException(kOfxStatErrImageFormat);
         }
-        if ( (srcA->getRenderScale().x != renderScale.x) ||
-             ( srcA->getRenderScale().y != renderScale.y) ||
-             ( ( srcA->getField() != OFX::eFieldNone) /* for DaVinci Resolve */ && ( srcA->getField() != args.fieldToRender) ) ) {
-            setPersistentMessage(OFX::Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-            OFX::throwSuiteStatusException(kOfxStatFailed);
-        }
+        checkBadRenderScaleOrField(srcA, args);
     }
+# endif
 
     const void *srcAPixelData;
     OfxRectI srcABounds;
@@ -208,19 +202,16 @@ CImgOperatorPluginHelper<Params>::render(const OFX::RenderArguments &args)
 
     OFX::auto_ptr<const OFX::Image> srcB( ( _srcBClip && _srcBClip->isConnected() ) ?
                                           _srcBClip->fetchImage(args.time) : 0 );
+# ifndef NDEBUG
     if ( srcB.get() ) {
         OFX::BitDepthEnum srcBBitDepth      = srcB->getPixelDepth();
         OFX::PixelComponentEnum srcBPixelComponents = srcB->getPixelComponents();
         if ( (srcBBitDepth != dstBitDepth) || (srcBPixelComponents != dstPixelComponents) ) {
             OFX::throwSuiteStatusException(kOfxStatErrImageFormat);
         }
-        if ( (srcB->getRenderScale().x != renderScale.x) ||
-             ( srcB->getRenderScale().y != renderScale.y) ||
-             ( ( srcB->getField() != OFX::eFieldNone) /* for DaVinci Resolve */ && ( srcB->getField() != args.fieldToRender) ) ) {
-            setPersistentMessage(OFX::Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-            OFX::throwSuiteStatusException(kOfxStatFailed);
-        }
+        checkBadRenderScaleOrField(srcB, args);
     }
+# endif
 
     const void *srcBPixelData;
     OfxRectI srcBBounds;
@@ -412,7 +403,7 @@ CImgOperatorPluginHelper<Params>::render(const OFX::RenderArguments &args)
         }
         assert( fred.get() );
         if ( fred.get() ) {
-            setupAndCopy(*fred, time, srcRoI,
+            setupAndCopy(*fred, time, srcRoI, renderScale,
                          NULL, NULL,
                          srcAPixelData, srcABounds, srcAPixelComponents, srcAPixelComponentCount, srcABitDepth, srcARowBytes, srcBoundary,
                          tmpAPixelData, tmpBounds, tmpPixelComponents, tmpPixelComponentCount, tmpBitDepth, tmpRowBytes,
@@ -455,7 +446,7 @@ CImgOperatorPluginHelper<Params>::render(const OFX::RenderArguments &args)
         }
         assert( fred.get() );
         if ( fred.get() ) {
-            setupAndCopy(*fred, time, srcRoI,
+            setupAndCopy(*fred, time, srcRoI, renderScale,
                          NULL, NULL,
                          srcBPixelData, srcBBounds, srcBPixelComponents, srcBPixelComponentCount, srcBBitDepth, srcBRowBytes, srcBoundary,
                          tmpBPixelData, tmpBounds, tmpPixelComponents, tmpPixelComponentCount, tmpBitDepth, tmpRowBytes,
@@ -544,7 +535,7 @@ CImgOperatorPluginHelper<Params>::render(const OFX::RenderArguments &args)
         }
         assert( fred.get() );
         if ( fred.get() ) {
-            setupAndCopy(*fred, time, renderWindow,
+            setupAndCopy(*fred, time, renderWindow, renderScale,
                          NULL, NULL,
                          tmpPixelData, tmpBounds, tmpPixelComponents, tmpPixelComponentCount, tmpBitDepth, tmpRowBytes, 0,
                          dstPixelData, dstBounds, dstPixelComponents, dstPixelComponentCount, dstBitDepth, dstRowBytes,
@@ -565,9 +556,11 @@ void
 CImgOperatorPluginHelper<Params>::getRegionsOfInterest(const OFX::RegionsOfInterestArguments &args,
                                                        OFX::RegionOfInterestSetter &rois)
 {
+# ifndef NDEBUG
     if ( !_supportsRenderScale && ( (args.renderScale.x != 1.) || (args.renderScale.y != 1.) ) ) {
         OFX::throwSuiteStatusException(kOfxStatFailed);
     }
+# endif
     const double time = args.time;
     const OfxRectD& regionOfInterest = args.regionOfInterest;
     Params params;
@@ -602,9 +595,11 @@ bool
 CImgOperatorPluginHelper<Params>::getRegionOfDefinition(const OFX::RegionOfDefinitionArguments &args,
                                                         OfxRectD &rod)
 {
+# ifndef NDEBUG
     if ( !_supportsRenderScale && ( (args.renderScale.x != 1.) || (args.renderScale.y != 1.) ) ) {
         OFX::throwSuiteStatusException(kOfxStatFailed);
     }
+# endif
     Params params;
     getValuesAtTime(args.time, params);
 
@@ -639,9 +634,11 @@ CImgOperatorPluginHelper<Params>::isIdentity(const OFX::IsIdentityArguments &arg
                                              double & /*identityTime*/
                                              , int& /*view*/, std::string& /*plane*/)
 {
+# ifndef NDEBUG
     if ( !_supportsRenderScale && ( (args.renderScale.x != 1.) || (args.renderScale.y != 1.) ) ) {
         OFX::throwSuiteStatusException(kOfxStatFailed);
     }
+# endif
     const double time = args.time;
     Params params;
     getValuesAtTime(time, params);

@@ -142,11 +142,23 @@ endif
 
 # For CImg.h versions,
 # see https://github.com/dtschump/CImg/commits/master/CImg.h
+# Important: must be also set in .appveyor.yml at toplevel.
 #
 # commit a841cc3080ee7bc00c5781e94b7f06c2920453ac is CImg 2.2.3+
 # commit 4d54d452896fdf9347af68d3854f98f4986eea4c is CImg 2.3.1
 # commit 548744b47c9316f656c4bdd1206e78646226c6be is CImg 2.3.3
-CIMGVERSION=548744b47c9316f656c4bdd1206e78646226c6be
+# commit 0c333883a9d16d007e2db6a1792c97aeb2021b51 is CImg 2.6.1
+# commit f3d1a1a0684f14ec2d7ab2bbc7b59863b2d9b9e2 is CImg 2.6.2
+# commit bd64cb5415f127e62f390ed57e22bc752a77a549 is CImg 2.6.5
+# commit 54779282070f1e2e38b5b9c2c652822f9f74412b is CImg 2.6.6
+# commit 17c15abb5b49208731e2dd5cd45958dc13603779 is CImg 2.6.7
+# commit 81a66d06d29763641ae533451543fa60d07f3a66 is CImg 2.7.0
+# commit a3b57fe7f0cfbf84635e3070fc3c896b25ff6c5f is CImg 2.7.2
+# commit 3efdd8fb35e76873edcb01f9c30af762aeccb97a is CImg 2.7.4
+# commit 39215451d0b839b4e72d32afb15ea69701a7f4eb is CImg 2.8.0
+# commit 530715cfe254d325cf8cec345210d9935fe4cf50 is CImg 2.8.1
+# commit b29d5cb0ed4ca3d94ceae31232668f646c9e45a9 is CImg 2.8.2
+CIMGVERSION=b29d5cb0ed4ca3d94ceae31232668f646c9e45a9
 
 CImg.h: Inpaint/inpaint.h
 	curl -L -s -S -o $@ https://raw.githubusercontent.com/dtschump/CImg/$(CIMGVERSION)/CImg.h
@@ -157,8 +169,13 @@ Inpaint/inpaint.h:
 	curl -L -s -S -o $@ https://raw.githubusercontent.com/dtschump/CImg/$(CIMGVERSION)/plugins/inpaint.h
 	patch -p0 -d. < Inpaint/inpaint.h.patch
 
-nlmeans.h:
-	curl -L -s -S -o $@ https://raw.githubusercontent.com/dtschump/CImg/$(CIMGVERSION)/plugins/nlmeans.h
+#nlmeans.h:
+#	curl -L -s -S -o $@ https://raw.githubusercontent.com/dtschump/CImg/$(CIMGVERSION)/plugins/nlmeans.h
+
+.PHONY: distclean
+
+distclean: clean
+	-rm CImg.h Inpaint/inpaint.h
 
 #git archive --remote=git://git.code.sf.net/p/gmic/source $(CIMGVERSION):src CImg.h | tar xf -
 

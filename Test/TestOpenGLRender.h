@@ -61,6 +61,9 @@
 #endif
 
 #ifdef __APPLE__
+#  ifndef GL_SILENCE_DEPRECATION
+#  define GL_SILENCE_DEPRECATION // Yes, we are still doing OpenGL 2.1
+#  endif
 #  include <OpenGL/gl.h>
 #  include <OpenGL/glext.h>
 //#  include <OpenGL/glu.h>
@@ -1198,6 +1201,7 @@ TestOpenGLPlugin::RENDERFUNC(const OFX::RenderArguments &args)
     }
     OFX::BitDepthEnum dstBitDepth    = dst->getPixelDepth();
     OFX::PixelComponentEnum dstComponents  = dst->getPixelComponents();
+# ifndef NDEBUG
     if ( ( dstBitDepth != _dstClip->getPixelDepth() ) ||
          ( dstComponents != _dstClip->getPixelComponents() ) ) {
         setPersistentMessage(OFX::Message::eMessageError, "", "OFX Host gave image with wrong depth or components");
@@ -1205,14 +1209,8 @@ TestOpenGLPlugin::RENDERFUNC(const OFX::RenderArguments &args)
 
         return;
     }
-    if ( (dst->getRenderScale().x != args.renderScale.x) ||
-         ( dst->getRenderScale().y != args.renderScale.y) ||
-         ( ( dst->getField() != OFX::eFieldNone) /* for DaVinci Resolve */ && ( dst->getField() != args.fieldToRender) ) ) {
-        setPersistentMessage(OFX::Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-        OFX::throwSuiteStatusException(kOfxStatFailed);
-
-        return;
-    }
+    checkBadRenderScaleOrField(dst, args);
+# endif
 # if defined(USE_OPENGL) && defined(DEBUG)
     if (args.openGLEnabled) {
         // (OpenGL direct rendering only)
@@ -1252,12 +1250,14 @@ TestOpenGLPlugin::RENDERFUNC(const OFX::RenderArguments &args)
     }
     OFX::BitDepthEnum srcBitDepth      = src->getPixelDepth();
     OFX::PixelComponentEnum srcComponents = src->getPixelComponents();
+# ifndef NDEBUG
     if ( (srcBitDepth != dstBitDepth) || (srcComponents != dstComponents) ) {
         DPRINT( ( "render: (srcBitDepth=%s != dstBitDepth=%s) || (srcComponents=%s != dstComponents=%s)\n", mapBitDepthEnumToStr(srcBitDepth), mapBitDepthEnumToStr(dstBitDepth), mapPixelComponentEnumToStr(srcComponents), mapPixelComponentEnumToStr(dstComponents) ) );
         OFX::throwSuiteStatusException(kOfxStatErrImageFormat);
 
         return;
     }
+# endif
     GLenum srcTarget = GL_TEXTURE_2D;
     GLuint srcIndex = 0;
 # ifdef USE_OPENGL
@@ -1286,12 +1286,12 @@ TestOpenGLPlugin::RENDERFUNC(const OFX::RenderArguments &args)
         return;
     }
     GLenum type = GL_NONE;
+#ifdef USE_OSMESA
 # ifdef USE_DEPTH
     GLint depthBits = 24;
 # else
     GLint depthBits = 0;
 # endif
-#ifdef USE_OSMESA
     GLint stencilBits = 0;
     GLint accumBits = 0;
 #endif
@@ -2104,6 +2104,7 @@ TestOpenGLPlugin::contextAttached(bool createContextData)
 #else
     assert(!createContextData); // context data is handled differently in CPU rendering
 #endif
+    unused(createContextData);
 
 
 #if !defined(USE_OSMESA) && ( defined(_WIN32) || defined(__WIN32__) || defined(WIN32 ) )

@@ -68,6 +68,9 @@
 #endif
 
 #if !defined(USE_OSMESA) && defined(__APPLE__)
+#  ifndef GL_SILENCE_DEPRECATION
+#  define GL_SILENCE_DEPRECATION // Yes, we are still doing OpenGL 2.1
+#  endif
 #  include <OpenGL/gl.h>
 #  include <OpenGL/glext.h>
 //#  include <OpenGL/glu.h>
@@ -79,9 +82,7 @@
 
 #include "ofxsOGLDebug.h"
 
-#ifndef DEBUG
-#define DPRINT(args) (void)0
-#else
+#ifdef DEBUG
 #include <cstdarg> // ...
 #include <iostream>
 #include <stdio.h> // for snprintf & _snprintf
@@ -91,6 +92,13 @@
 #    define snprintf _snprintf
 #  endif
 #endif // defined(_WIN32) || defined(__WIN32__) || defined(WIN32)
+#endif
+
+namespace Shadertoy {
+
+#ifndef DEBUG
+#define DPRINT(args) (void)0
+#else
 
 #define DPRINT(args) print_dbg args
 static
@@ -795,7 +803,7 @@ compileAndLinkProgram(const char *vertexShader,
         for (i = 0; i < count; i++) {
             glGetActiveAttrib(program, (GLuint)i, bufSize, &length, &size, &type, &name[0]);
             glCheckError();
-            DPRINT( ("Attribute #%d Type: %s Name: %s\n", i, glGetEnumString(type), &name[0]) );
+            DPRINT( ("Attribute #%d Type: %s Name: %s\n", i, glGetEnumString(type), (const char*)&name[0]) );
         }
 
         // Uniforms
@@ -809,7 +817,7 @@ compileAndLinkProgram(const char *vertexShader,
         for (i = 0; i < count; i++) {
             glGetActiveUniform(program, (GLuint)i, bufSize, &length, &size, &type, &name[0]);
             glCheckError();
-            DPRINT( ("Uniform #%d Type: %s Name: %s\n", i, glGetEnumString(type), &name[0]) );
+            DPRINT( ("Uniform #%d Type: %s Name: %s\n", i, glGetEnumString(type), (const char*)&name[0]) );
             GLint loc = glGetUniformLocation(program, &name[0]);
             if (loc >= 0) {
                 switch (type) {
@@ -1031,6 +1039,7 @@ ShadertoyPlugin::RENDERFUNC(const OFX::RenderArguments &args)
     }
     OFX::BitDepthEnum dstBitDepth    = dst->getPixelDepth();
     OFX::PixelComponentEnum dstComponents  = dst->getPixelComponents();
+# ifndef NDEBUG
     if ( ( dstBitDepth != _dstClip->getPixelDepth() ) ||
          ( dstComponents != _dstClip->getPixelComponents() ) ) {
         setPersistentMessage(OFX::Message::eMessageError, "", "OFX Host gave image with wrong depth or components");
@@ -1038,14 +1047,8 @@ ShadertoyPlugin::RENDERFUNC(const OFX::RenderArguments &args)
 
         return;
     }
-    if ( (dst->getRenderScale().x != args.renderScale.x) ||
-         ( dst->getRenderScale().y != args.renderScale.y) ||
-         ( ( dst->getField() != OFX::eFieldNone) /* for DaVinci Resolve */ && ( dst->getField() != args.fieldToRender) ) ) {
-        setPersistentMessage(OFX::Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-        OFX::throwSuiteStatusException(kOfxStatFailed);
-
-        return;
-    }
+    checkBadRenderScaleOrField(dst, args);
+# endif
 # if defined(USE_OPENGL) && defined(DEBUG)
     if (args.openGLEnabled) {
         // (OpenGL direct rendering only)
@@ -1106,6 +1109,7 @@ ShadertoyPlugin::RENDERFUNC(const OFX::RenderArguments &args)
 
     for (unsigned i = 0; i < NBINPUTS; ++i) {
         if ( src[i].get() ) {
+#         ifndef NDEBUG
             srcBitDepth[i] = src[i]->getPixelDepth();
             srcComponents[i] = src[i]->getPixelComponents();
             if ( (srcBitDepth[i] != dstBitDepth) || (srcComponents[i] != dstComponents) ) {
@@ -1113,6 +1117,7 @@ ShadertoyPlugin::RENDERFUNC(const OFX::RenderArguments &args)
 
                 return;
             }
+#         endif
             // filter for each texture (nearest, linear, mipmap [default])
             // nearest = GL_NEAREST/GL_NEAREST
             // linear = GL_LINEAR/GL_LINEAR
@@ -1411,7 +1416,7 @@ ShadertoyPlugin::RENDERFUNC(const OFX::RenderArguments &args)
                         glGetActiveUniform(program, (GLuint)i, bufSize, &length, &size, &type, &name[0]);
                         glCheckError();
                         name.resize((unsigned)length);
-                        //DPRINT( ("Uniform #%d Type: %s Name: %s\n", i, glGetEnumString(type), &name[0]) );
+                        //DPRINT( ("Uniform #%d Type: %s Name: %s\n", i, glGetEnumString(type), (const char*)&name[0]) );
                         GLint loc = glGetUniformLocation(program, &name[0]);
 
                         if (loc >= 0) {
@@ -1483,7 +1488,7 @@ ShadertoyPlugin::RENDERFUNC(const OFX::RenderArguments &args)
                                 break;
                             }
                             if (t == eUniformTypeNone) {
-                                DPRINT( ("Uniform #%d Type: %s Name: %s NOT SUPPORTED\n", i, glGetEnumString(type), &name[0]) );
+                                DPRINT( ("Uniform #%d Type: %s Name: %s NOT SUPPORTED\n", i, glGetEnumString(type), (const char*)&name[0]) );
                                 continue;
                             }
 
@@ -2559,5 +2564,7 @@ ShadertoyPlugin::OSMesaDriverSelectable()
 #endif
 }
 
-#endif
+#endif // USE_OSMESA
+
+} // namespace Shadertoy
 

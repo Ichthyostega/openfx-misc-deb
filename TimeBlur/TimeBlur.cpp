@@ -76,7 +76,6 @@ OFXS_NAMESPACE_ANONYMOUS_ENTER
 #define OFX_COMPONENTS_OK(c) ((c)== ePixelComponentAlpha || (c) == ePixelComponentRGB || (c) == ePixelComponentRGBA)
 #endif
 
-
 class TimeBlurProcessorBase
     : public PixelProcessor
 {
@@ -120,8 +119,9 @@ public:
 
 private:
 
-    void multiThreadProcessImages(OfxRectI procWindow)
+    void multiThreadProcessImages(const OfxRectI& procWindow, const OfxPointD& rs) OVERRIDE FINAL
     {
+        unused(rs);
         assert(1 <= nComponents && nComponents <= 4);
         assert(!_divisions || _dstPixelData);
         float tmpPix[nComponents];
@@ -191,6 +191,7 @@ public:
         , _shutteroffset(NULL)
         , _shuttercustomoffset(NULL)
     {
+
         _dstClip = fetchClip(kOfxImageEffectOutputClipName);
         assert( _dstClip && (!_dstClip->isConnected() || OFX_COMPONENTS_OK(_dstClip->getPixelComponents())) );
         _srcClip = getContext() == eContextGenerator ? NULL : fetchClip(kOfxImageEffectSimpleSourceClipName);
@@ -271,6 +272,7 @@ TimeBlurPlugin::setupAndProcess(TimeBlurProcessorBase &processor,
     if ( !dst.get() ) {
         throwSuiteStatusException(kOfxStatFailed);
     }
+# ifndef NDEBUG
     BitDepthEnum dstBitDepth    = dst->getPixelDepth();
     PixelComponentEnum dstComponents  = dst->getPixelComponents();
     if ( ( dstBitDepth != _dstClip->getPixelDepth() ) ||
@@ -278,12 +280,8 @@ TimeBlurPlugin::setupAndProcess(TimeBlurProcessorBase &processor,
         setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong depth or components");
         throwSuiteStatusException(kOfxStatFailed);
     }
-    if ( (dst->getRenderScale().x != args.renderScale.x) ||
-         ( dst->getRenderScale().y != args.renderScale.y) ||
-         ( ( dst->getField() != eFieldNone) /* for DaVinci Resolve */ && ( dst->getField() != args.fieldToRender) ) ) {
-        setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-        throwSuiteStatusException(kOfxStatFailed);
-    }
+    checkBadRenderScaleOrField(dst, args);
+# endif
 
     // accumulator image
     auto_ptr<ImageMemory> accumulator;
@@ -335,19 +333,16 @@ TimeBlurPlugin::setupAndProcess(TimeBlurProcessorBase &processor,
             }
             const Image* src = _srcClip ? _srcClip->fetchImage(range.min + i * interval) : 0;
             //std::printf("TimeBlur: fetchimage(%g)\n", range.min + i * interval);
+#         ifndef NDEBUG
             if (src) {
-                if ( (src->getRenderScale().x != args.renderScale.x) ||
-                     ( src->getRenderScale().y != args.renderScale.y) ||
-                     ( ( src->getField() != eFieldNone) /* for DaVinci Resolve */ && ( src->getField() != args.fieldToRender) ) ) {
-                    setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-                    throwSuiteStatusException(kOfxStatFailed);
-                }
+                checkBadRenderScaleOrField(src, args);
                 BitDepthEnum srcBitDepth      = src->getPixelDepth();
                 PixelComponentEnum srcComponents = src->getPixelComponents();
                 if ( (srcBitDepth != dstBitDepth) || (srcComponents != dstComponents) ) {
                     throwSuiteStatusException(kOfxStatErrImageFormat);
                 }
             }
+#         endif
             srcImgs.images.push_back(src);
         }
 
@@ -357,7 +352,7 @@ TimeBlurPlugin::setupAndProcess(TimeBlurProcessorBase &processor,
         }
         processor.setSrcImgs(srcImgs.images);
         // set the render window
-        processor.setRenderWindow(renderWindow);
+        processor.setRenderWindow(renderWindow, args.renderScale);
         processor.setAccumulator(accumulatorData);
 
         processor.setValues(lastPass ? divisions : 0);
@@ -373,8 +368,8 @@ TimeBlurPlugin::render(const RenderArguments &args)
 {
     PixelComponentEnum dstComponents  = _dstClip->getPixelComponents();
 
-    assert( kSupportsMultipleClipPARs   || !_srcClip || _srcClip->getPixelAspectRatio() == _dstClip->getPixelAspectRatio() );
-    assert( kSupportsMultipleClipDepths || !_srcClip || _srcClip->getPixelDepth()       == _dstClip->getPixelDepth() );
+    assert( kSupportsMultipleClipPARs   || !_srcClip || !_srcClip->isConnected() || _srcClip->getPixelAspectRatio() == _dstClip->getPixelAspectRatio() );
+    assert( kSupportsMultipleClipDepths || !_srcClip || !_srcClip->isConnected() || _srcClip->getPixelDepth()       == _dstClip->getPixelDepth() );
     assert(OFX_COMPONENTS_OK(dstComponents));
     if (dstComponents == ePixelComponentRGBA) {
         renderForComponents<4>(args);

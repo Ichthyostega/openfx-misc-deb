@@ -253,6 +253,7 @@ public:
         , _buffer(NULL)
         , _name()
     {
+
         setSequentialRender(true); // must also be set here, since it is missing from the plugin descriptor in Resolve
         if ( !gTimeBufferMapMutex.get() ) {
             gTimeBufferMapMutex.reset(new Mutex);
@@ -472,21 +473,14 @@ TimeBufferReadPlugin::render(const RenderArguments &args)
     //std::cout << "render!\n";
     const double time = args.time;
 
-    assert( kSupportsMultipleClipPARs   || !_srcClip || _srcClip->getPixelAspectRatio() == _dstClip->getPixelAspectRatio() );
-    assert( kSupportsMultipleClipDepths || !_srcClip || _srcClip->getPixelDepth()       == _dstClip->getPixelDepth() );
+    assert( kSupportsMultipleClipPARs   || !_srcClip || !_srcClip->isConnected() || _srcClip->getPixelAspectRatio() == _dstClip->getPixelAspectRatio() );
+    assert( kSupportsMultipleClipDepths || !_srcClip || !_srcClip->isConnected() || _srcClip->getPixelDepth()       == _dstClip->getPixelDepth() );
 
     auto_ptr<Image> dst( _dstClip->fetchImage(args.time) );
     if ( !dst.get() ) {
         throwSuiteStatusException(kOfxStatFailed);
     }
-    if ( (dst->getRenderScale().x != args.renderScale.x) ||
-         ( dst->getRenderScale().y != args.renderScale.y) ||
-         ( ( dst->getField() != eFieldNone) /* for DaVinci Resolve */ && ( dst->getField() != args.fieldToRender) ) ) {
-        setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-        throwSuiteStatusException(kOfxStatFailed);
-
-        return;
-    }
+    checkBadRenderScaleOrField(dst, args);
     BitDepthEnum dstBitDepth       = dst->getPixelDepth();
     PixelComponentEnum dstComponents  = dst->getPixelComponents();
 
@@ -508,7 +502,7 @@ TimeBufferReadPlugin::render(const RenderArguments &args)
     //   - if t == startTime, the buffer is locked and marked as dirty, with date t+1, then unlocked
     if (time <= startFrame) {
         clearPersistentMessage();
-        fillBlack( *this, args.renderWindow, dst.get() );
+        fillBlack( *this, args.renderWindow, args.renderScale, dst.get() );
         if (time == startFrame) {
             AutoMutex guard(timeBuffer->mutex);
             timeBuffer->dirty = true;
@@ -530,7 +524,7 @@ TimeBufferReadPlugin::render(const RenderArguments &args)
 
             return;
         case eUnorderedRenderBlack:
-            fillBlack( *this, args.renderWindow, dst.get() );
+            fillBlack( *this, args.renderWindow, args.renderScale, dst.get() );
             timeBuffer->dirty = true;
             timeBuffer->time = time + 1;
 
@@ -560,7 +554,7 @@ TimeBufferReadPlugin::render(const RenderArguments &args)
 
                 return;
             case eUnorderedRenderBlack:
-                fillBlack( *this, args.renderWindow, dst.get() );
+                fillBlack( *this, args.renderWindow, args.renderScale, dst.get() );
                 timeBuffer->dirty = true;
                 timeBuffer->time = time + 1;
 
@@ -579,7 +573,7 @@ TimeBufferReadPlugin::render(const RenderArguments &args)
 
             return;
         case eUnorderedRenderBlack:
-            fillBlack( *this, args.renderWindow, dst.get() );
+            fillBlack( *this, args.renderWindow, args.renderScale, dst.get() );
             timeBuffer->dirty = true;
             timeBuffer->time = time + 1;
 
@@ -587,7 +581,7 @@ TimeBufferReadPlugin::render(const RenderArguments &args)
         }
     }
     //   - when the buffer is locked and clean, it is copied to output and unlocked
-    copyPixels( *this, args.renderWindow,
+    copyPixels( *this, args.renderWindow, args.renderScale,
                 (void*)&timeBuffer->pixelData.front(),
                 timeBuffer->bounds,
                 timeBuffer->pixelComponents,
@@ -930,6 +924,7 @@ public:
         , _buffer(NULL)
         , _name()
     {
+
         if ( !gTimeBufferMapMutex.get() ) {
             gTimeBufferMapMutex.reset(new Mutex);
         }
@@ -961,7 +956,11 @@ public:
 
     virtual ~TimeBufferWritePlugin()
     {
-        setName("");
+        try {
+            setName("");
+        } catch (OFX::Exception::Suite&) {
+            // ignore
+        }
     }
 
 private:
@@ -1147,14 +1146,15 @@ TimeBufferWritePlugin::render(const RenderArguments &args)
         return;
     }
 
-    assert( kSupportsMultipleClipPARs   || !_srcClip || _srcClip->getPixelAspectRatio() == _dstClip->getPixelAspectRatio() );
-    assert( kSupportsMultipleClipDepths || !_srcClip || _srcClip->getPixelDepth()       == _dstClip->getPixelDepth() );
+    assert( kSupportsMultipleClipPARs   || !_srcClip || !_srcClip->isConnected() || _srcClip->getPixelAspectRatio() == _dstClip->getPixelAspectRatio() );
+    assert( kSupportsMultipleClipDepths || !_srcClip || !_srcClip->isConnected() || _srcClip->getPixelDepth()       == _dstClip->getPixelDepth() );
     // do the rendering
     // get a dst image
     auto_ptr<Image>  dst( _dstClip->fetchImage(args.time) );
     if ( !dst.get() ) {
         throwSuiteStatusException(kOfxStatFailed);
     }
+# ifndef NDEBUG
     BitDepthEnum dstBitDepth    = dst->getPixelDepth();
     PixelComponentEnum dstComponents  = dst->getPixelComponents();
     assert(dstComponents == ePixelComponentRGBA);
@@ -1163,29 +1163,22 @@ TimeBufferWritePlugin::render(const RenderArguments &args)
         setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong depth or components");
         throwSuiteStatusException(kOfxStatFailed);
     }
-    if ( (dst->getRenderScale().x != args.renderScale.x) ||
-         ( dst->getRenderScale().y != args.renderScale.y) ||
-         ( ( dst->getField() != eFieldNone) /* for DaVinci Resolve */ && ( dst->getField() != args.fieldToRender) ) ) {
-        setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-        throwSuiteStatusException(kOfxStatFailed);
-    }
+    checkBadRenderScaleOrField(dst, args);
+# endif
 
     const double time = args.time;
     auto_ptr<const Image> src( ( _srcClip && _srcClip->isConnected() ) ?
                                     _srcClip->fetchImage(time) : 0 );
+# ifndef NDEBUG
     if ( src.get() ) {
-        if ( (src->getRenderScale().x != args.renderScale.x) ||
-             ( src->getRenderScale().y != args.renderScale.y) ||
-             ( ( src->getField() != eFieldNone) /* for DaVinci Resolve */ && ( src->getField() != args.fieldToRender) ) ) {
-            setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-            throwSuiteStatusException(kOfxStatFailed);
-        }
+        checkBadRenderScaleOrField(src, args);
         BitDepthEnum srcBitDepth      = src->getPixelDepth();
         PixelComponentEnum srcComponents = src->getPixelComponents();
         if ( (srcBitDepth != dstBitDepth) || (srcComponents != dstComponents) ) {
             throwSuiteStatusException(kOfxStatErrImageFormat);
         }
     }
+# endif
 
     // do the rendering
     TimeBuffer* timeBuffer = 0;
@@ -1213,12 +1206,12 @@ TimeBufferWritePlugin::render(const RenderArguments &args)
         timeBuffer->renderScale = args.renderScale;
         timeBuffer->par = src->getPixelAspectRatio();
         timeBuffer->pixelData.resize( (size_t)timeBuffer->rowBytes * (args.renderWindow.y2 - args.renderWindow.y1) );
-        copyPixels(*this, args.renderWindow, src.get(), &timeBuffer->pixelData.front(), timeBuffer->bounds, timeBuffer->pixelComponents, timeBuffer->pixelComponentCount, timeBuffer->bitDepth, timeBuffer->rowBytes);
+        copyPixels(*this, args.renderWindow, args.renderScale, src.get(), &timeBuffer->pixelData.front(), timeBuffer->bounds, timeBuffer->pixelComponents, timeBuffer->pixelComponentCount, timeBuffer->bitDepth, timeBuffer->rowBytes);
         timeBuffer->dirty = false;
     }
     // - src is also copied to output.
 
-    copyPixels( *this, args.renderWindow, src.get(), dst.get() );
+    copyPixels( *this, args.renderWindow, args.renderScale, src.get(), dst.get() );
     clearPersistentMessage();
     //std::cout << "render! OK\n";
 } // TimeBufferWritePlugin::render

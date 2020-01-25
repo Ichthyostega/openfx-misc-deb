@@ -132,7 +132,7 @@ OFXS_NAMESPACE_ANONYMOUS_ENTER
     "\n" \
     "There are 2 options to pull a key with PIK. One is to use PIKColor to automatically extract a clean plate from the foreground image and use it as the the C input, and the other is to pick a color which best represents the area you are trying to key.\n" \
     "\n" \
-    "The blue- or greenscreen image should be used as the Fg input, which is used to compute the output color. If that image contains significant noise, a denoised version should be used as the PFg input, which is used to pull the key. The C input should either be a clean plate or the outupt of PIKColor, and is used as the screen color if the 'Screen Type' is not 'Pick'. The Bg image is used in calculating fine edge detail when either 'Use Bg Luminance' or 'Use Bg Chroma' is checked. Optionally, an inside mask (a.k.a. holdout matte or core matte) and an outside mask (a.k.a. garbage matte) can be connected to inputs InM and OutM. Note that the outside mask takes precedence over the inside mask.\n" \
+    "The blue- or greenscreen image should be used as the Fg input, which is used to compute the output color. If that image contains significant noise, a denoised version should be used as the PFg input, which is used to pull the key. The C input should either be a clean plate or the output of PIKColor, and is used as the screen color if the 'Screen Type' is not 'Pick'. The Bg image is used in calculating fine edge detail when either 'Use Bg Luminance' or 'Use Bg Chroma' is checked. Optionally, an inside mask (a.k.a. holdout matte or core matte) and an outside mask (a.k.a. garbage matte) can be connected to inputs InM and OutM. Note that the outside mask takes precedence over the inside mask.\n" \
     "\n" \
     "If PIKcolor is used to build the clean plate, the PIKColor Source input should be the same as the PFg input to PIK, e.g. the denoised footage, and the inside mask of PIK can also be fed into the InM input of PIKColor.\n" \
     "\n" \
@@ -688,8 +688,9 @@ public:
     }
 
 private:
-    void multiThreadProcessImages(OfxRectI procWindow)
+    void multiThreadProcessImages(const OfxRectI& procWindow, const OfxPointD& rs) OVERRIDE FINAL
     {
+        unused(rs);
         assert(nComponents == 4);
         assert(!_fgImg || _fgImg->getPixelComponents() == ePixelComponentRGBA || _fgImg->getPixelComponents() == ePixelComponentRGB);
         assert(!_pfgImg || _pfgImg->getPixelComponents() == ePixelComponentRGBA || _pfgImg->getPixelComponents() == ePixelComponentRGB);
@@ -1497,6 +1498,7 @@ public:
         , _ubc(NULL)
         , _colorspace(NULL)
     {
+
         _dstClip = fetchClip(kOfxImageEffectOutputClipName);
         assert( _dstClip && (!_dstClip->isConnected() || _dstClip->getPixelComponents() == ePixelComponentRGBA) );
         _fgClip = fetchClip(kClipFg);
@@ -1692,6 +1694,7 @@ PIKPlugin::setupAndProcess(PIKProcessorBase &processor,
     if ( !dst.get() ) {
         throwSuiteStatusException(kOfxStatFailed);
     }
+# ifndef NDEBUG
     BitDepthEnum dstBitDepth    = dst->getPixelDepth();
     PixelComponentEnum dstComponents  = dst->getPixelComponents();
     if ( ( dstBitDepth != _dstClip->getPixelDepth() ) ||
@@ -1699,12 +1702,8 @@ PIKPlugin::setupAndProcess(PIKProcessorBase &processor,
         setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong depth or components");
         throwSuiteStatusException(kOfxStatFailed);
     }
-    if ( (dst->getRenderScale().x != args.renderScale.x) ||
-         ( dst->getRenderScale().y != args.renderScale.y) ||
-         ( ( dst->getField() != eFieldNone) /* for DaVinci Resolve */ && ( dst->getField() != args.fieldToRender) ) ) {
-        setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-        throwSuiteStatusException(kOfxStatFailed);
-    }
+    checkBadRenderScaleOrField(dst, args);
+# endif
 
     ScreenTypeEnum screenType = (ScreenTypeEnum)_screenType->getValueAtTime(time);
     OfxRGBColourD color = {0., 0., 1.};
@@ -1836,93 +1835,73 @@ PIKPlugin::setupAndProcess(PIKProcessorBase &processor,
     auto_ptr<const Image> outMask( ( getoutm && ( _outMaskClip && _outMaskClip->isConnected() ) ) ?
                                         _outMaskClip->fetchImage(time) : 0 );
     if ( fg.get() ) {
-        if ( (fg->getRenderScale().x != args.renderScale.x) ||
-             ( fg->getRenderScale().y != args.renderScale.y) ||
-             ( ( fg->getField() != eFieldNone) /* for DaVinci Resolve */ && ( fg->getField() != args.fieldToRender) ) ) {
-            setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-            throwSuiteStatusException(kOfxStatFailed);
-        }
+#     ifndef NDEBUG
+        checkBadRenderScaleOrField(fg, args);
         BitDepthEnum fgBitDepth      = fg->getPixelDepth();
         //PixelComponentEnum fgComponents = fg->getPixelComponents();
         if (fgBitDepth != dstBitDepth /* || fgComponents != dstComponents*/) { // Keyer outputs RGBA but may have RGB input
             throwSuiteStatusException(kOfxStatErrImageFormat);
         }
+#     endif
     } else if (getfg) {
         // Nuke sometimes returns NULL when render is interrupted
         throwSuiteStatusException(kOfxStatFailed);
     }
 
     if ( pfg.get() ) {
-        if ( (pfg->getRenderScale().x != args.renderScale.x) ||
-             ( pfg->getRenderScale().y != args.renderScale.y) ||
-             ( ( pfg->getField() != eFieldNone) /* for DaVinci Resolve */ && ( pfg->getField() != args.fieldToRender) ) ) {
-            setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-            throwSuiteStatusException(kOfxStatFailed);
-        }
+#     ifndef NDEBUG
+        checkBadRenderScaleOrField(pfg, args);
         BitDepthEnum pfgBitDepth      = pfg->getPixelDepth();
         //PixelComponentEnum pfgComponents = pfg->getPixelComponents();
         if (pfgBitDepth != dstBitDepth /* || pfgComponents != dstComponents*/) { // Keyer outputs RGBA but may have RGB input
             throwSuiteStatusException(kOfxStatErrImageFormat);
         }
+#     endif
     }
 
     if ( c.get() ) {
-        if ( (c->getRenderScale().x != args.renderScale.x) ||
-             ( c->getRenderScale().y != args.renderScale.y) ||
-             ( ( c->getField() != eFieldNone) /* for DaVinci Resolve */ && ( c->getField() != args.fieldToRender) ) ) {
-            setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-            throwSuiteStatusException(kOfxStatFailed);
-        }
+#     ifndef NDEBUG
+        checkBadRenderScaleOrField(c, args);
         BitDepthEnum cBitDepth      = c->getPixelDepth();
         //PixelComponentEnum cComponents = c->getPixelComponents();
         if (cBitDepth != dstBitDepth /* || cComponents != dstComponents*/) { // Keyer outputs RGBA but may have RGB input
             throwSuiteStatusException(kOfxStatErrImageFormat);
         }
+#     endif
     } else if (getc) {
         setPersistentMessage(Message::eMessageError, "", "Clean plate (C input) is required but not available or not connected");
         throwSuiteStatusException(kOfxStatFailed);
     }
 
     if ( bg.get() ) {
-        if ( (bg->getRenderScale().x != args.renderScale.x) ||
-             ( bg->getRenderScale().y != args.renderScale.y) ||
-             ( ( bg->getField() != eFieldNone) /* for DaVinci Resolve */ && ( bg->getField() != args.fieldToRender) ) ) {
-            setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-            throwSuiteStatusException(kOfxStatFailed);
-        }
+#     ifndef NDEBUG
+        checkBadRenderScaleOrField(bg, args);
         BitDepthEnum srcBitDepth      = bg->getPixelDepth();
         //PixelComponentEnum srcComponents = bg->getPixelComponents();
         if (srcBitDepth != dstBitDepth /* || srcComponents != dstComponents*/) {  // Keyer outputs RGBA but may have RGB input
             throwSuiteStatusException(kOfxStatErrImageFormat);
         }
+#     endif
     } else if (getbg) {
         setPersistentMessage(Message::eMessageError, "", "Backgroung (Bg input) is required but not available or not connected");
         throwSuiteStatusException(kOfxStatFailed);
     }
 
+# ifndef NDEBUG
     if ( inMask.get() ) {
-        if ( (inMask->getRenderScale().x != args.renderScale.x) ||
-             ( inMask->getRenderScale().y != args.renderScale.y) ||
-             ( ( inMask->getField() != eFieldNone) /* for DaVinci Resolve */ && ( inMask->getField() != args.fieldToRender) ) ) {
-            setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-            throwSuiteStatusException(kOfxStatFailed);
-        }
+        checkBadRenderScaleOrField(inMask, args);
     }
     if ( outMask.get() ) {
-        if ( (outMask->getRenderScale().x != args.renderScale.x) ||
-             ( outMask->getRenderScale().y != args.renderScale.y) ||
-             ( ( outMask->getField() != eFieldNone) /* for DaVinci Resolve */ && ( outMask->getField() != args.fieldToRender) ) ) {
-            setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-            throwSuiteStatusException(kOfxStatFailed);
-        }
+        checkBadRenderScaleOrField(outMask, args);
     }
+# endif
 
     processor.setValues(screenType, color, redWeight, blueGreenWeight, alphaBias, despillBias, lmEnable, level, luma, llEnable, autolevels, yellow, cyan, magenta, ss, clampAlpha, rgbal,
                         screenClipMin, screenClipMax, screenReplace, screenReplaceColor,
                         sourceAlpha, insideReplace, insideReplaceColor, noKey, ubl, ubc, colorspace, outputMode);
     processor.setDstImg( dst.get() );
     processor.setSrcImgs( fg.get(), ( /*!noKey &&*/ !( _pfgClip && _pfgClip->isConnected() ) ) ? fg.get() : pfg.get(), c.get(), bg.get(), inMask.get(), outMask.get() );
-    processor.setRenderWindow(args.renderWindow);
+    processor.setRenderWindow(args.renderWindow, args.renderScale);
 
     processor.process();
 } // PIKPlugin::setupAndProcess
@@ -1933,7 +1912,6 @@ PIKPlugin::render(const RenderArguments &args)
 {
     // instantiate the render code based on the pixel depth of the dst clip
     BitDepthEnum dstBitDepth    = _dstClip->getPixelDepth();
-    PixelComponentEnum dstComponents  = _dstClip->getPixelComponents();
 
     assert( kSupportsMultipleClipPARs   || !_fgClip || !_fgClip->isConnected() || _fgClip->getPixelAspectRatio() == _dstClip->getPixelAspectRatio() );
     assert( kSupportsMultipleClipDepths || !_fgClip || !_fgClip->isConnected() || _fgClip->getPixelDepth()       == _dstClip->getPixelDepth() );
@@ -1943,12 +1921,15 @@ PIKPlugin::render(const RenderArguments &args)
     assert( kSupportsMultipleClipDepths || !_cClip || !_cClip->isConnected() || _cClip->getPixelDepth()       == _dstClip->getPixelDepth() );
     assert( kSupportsMultipleClipPARs   || !_bgClip || !_bgClip->isConnected() || _bgClip->getPixelAspectRatio() == _dstClip->getPixelAspectRatio() );
     assert( kSupportsMultipleClipDepths || !_bgClip || !_bgClip->isConnected() || _bgClip->getPixelDepth()       == _dstClip->getPixelDepth() );
+# ifndef NDEBUG
+    PixelComponentEnum dstComponents  = _dstClip->getPixelComponents();
     if (dstComponents != ePixelComponentRGBA) {
         setPersistentMessage(Message::eMessageError, "", "OFX Host dit not take into account output components");
         throwSuiteStatusException(kOfxStatErrImageFormat);
 
         return;
     }
+# endif
 
     clearPersistentMessage();
     

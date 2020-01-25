@@ -1,7 +1,9 @@
 Host-specific OpenFX bugs and caveats:
 
 
-* DaVinci Resolve Lite
+* Blackmagic DaVinci Resolve Lite
+
+Version 12.5:
 
 OFX API version 1.3
 hostName=DaVinciResolveLite
@@ -35,6 +37,40 @@ supportsCascadingChoices=0
 supportsChannelSelector=0
 suites=OfxImageEffectSuite,OfxPropertySuite,OfxParameterSuite,OfxMemorySuite,OfxMultiThreadSuite,OfxMessageSuite,OfxMessageSuiteV2,OfxProgressSuite,OfxTimeLineSuite,OfxImageEffectOpenGLRenderSuite
 
+Version 16:
+
+OFX API version 1.4
+hostName=DaVinciResolveLite
+hostLabel=DaVinci Resolve Lite
+hostVersion=16.0.0 (16.0)
+hostIsBackground=0
+supportsOverlays=1
+supportsMultiResolution=0
+supportsTiles=0
+temporalClipAccess=1
+supportedComponents=OfxImageComponentRGBA,OfxImageComponentAlpha
+supportedContexts=OfxImageEffectContextFilter,OfxImageEffectContextGeneral,OfxImageEffectContextTransition,OfxImageEffectContextGenerator
+supportedPixelDepths=OfxBitDepthFloat,OfxBitDepthShort,OfxBitDepthByte
+supportsMultipleClipDepths=0
+supportsMultipleClipPARs=0
+supportsSetableFrameRate=0
+supportsSetableFielding=0
+supportsStringAnimation=0
+supportsCustomInteract=0
+supportsChoiceAnimation=1
+supportsBooleanAnimation=1
+supportsCustomAnimation=0
+supportsParametricAnimation=0
+canTransform=0
+maxParameters=-1
+pageRowCount=0
+pageColumnCount=0
+isNatron=0
+supportsDynamicChoices=0
+supportsCascadingChoices=0
+supportsChannelSelector=0
+suites=OfxImageEffectSuite,OfxPropertySuite,OfxParameterSuite,OfxMemorySuite,OfxMultiThreadSuite,OfxMessageSuite,OfxProgressSuite,OfxTimeLineSuite
+
 Caveats/Bugs:
 - Resolve 14: claims it has OpenFX message suite V2, but setPersistentMessage is NULL and clearPersistentMessage is garbage.
 - Resolve 14: OpenGL render is never called, but an OpenGL context is attached when render action is called (thus the plugin may perform offscreen rendering)
@@ -42,7 +78,7 @@ Caveats/Bugs:
 - in Generators, even if the source clip is defined, it can not be fetched by the plug-in (the source clip should always be fetchable, it is mandatory in OpenFX)
 - all defined clips will appear connected (property kOfxImageClipPropConnected = 1) but give black and transparent (NULL) images. This is a problem for Mask clips, so a "Mask" boolean param must be added specifically for Resolve (see kParamMaskApply in openfx-misc)
 - kOfxImagePropField property is always kOfxImageFieldNone on OFX images, regardless of the clip properties
-- OfxParameterSuiteV1::paramCopy does nothing, keys and values have to be copied explicitely (see CornerPin)
+- OfxParameterSuiteV1::paramCopy does nothing, keys and values have to be copied explicitly (see CornerPin)
 - even though OfxImageEffectOpenGLRenderSuite exists, the render action is never called with OpenGL enabled (is Resolve supposed to support OpenGL rendering?)
 - The range AND display range has to be defined for all Double params (kOfxParamTypeDouble, kOfxParamTypeDouble2D, kOfxParamTypeDouble3D), or a default range of (-1,1) is used, and values cannot lie outsideof this range !
 - The range AND display range has to be defined for Int params (kOfxParamTypeInteger), or a default range of (0,0) is used, and values cannot lie outside of this range !
@@ -205,3 +241,76 @@ suites=OfxImageEffectSuite,OfxPropertySuite,OfxParameterSuite,OfxMemorySuite,Ofx
 
 - the OFX Log is "/Applications/ofxTestLog.txt"
 - the OFX plugin cache is in "~/Library/Application Support/Sony/Catalyst Edit/2015.1/plugincache.xml
+
+* Sony Vegas 12
+
+OFX API version 1.1
+hostName=com.sonycreativesoftware.vegas
+hostLabel=Vegas Pro 12.0
+hostVersion=12.726.0 ()
+hostIsBackground=0
+supportsOverlays=0
+supportsMultiResolution=0
+supportsTiles=0
+temporalClipAccess=1
+supportedComponents=OfxImageComponentNone,OfxImageComponentRGBA,OfxImageComponentAlpha
+supportedContexts=OfxImageEffectContextGeneral,OfxImageEffectContextGenerator,OfxImageEffectContextFilter,OfxImageEffectContextTransition,OfxImageEffectContextRetimer,OfxImageEffectContextPaint
+supportedPixelDepths=OfxBitDepthByte,OfxBitDepthFloat
+supportsMultipleClipDepths=0
+supportsMultipleClipPARs=0
+supportsSetableFrameRate=0
+supportsSetableFielding=0
+supportsStringAnimation=1
+supportsCustomInteract=0
+supportsChoiceAnimation=1
+supportsBooleanAnimation=1
+supportsCustomAnimation=0
+supportsParametricAnimation=0
+canTransform=0
+maxParameters=1000
+pageRowCount=0
+pageColumnCount=0
+isNatron=0
+supportsDynamicChoices=0
+supportsCascadingChoices=0
+supportsChannelSelector=0
+suites=OfxImageEffectSuite,OfxPropertySuite,OfxParameterSuite,OfxMemorySuite,OfxMultiThreadSuite,OfxMessageSuite,OfxMessageSuiteV2,OfxProgressSuite,OfxTimeLineSuite,OfxImageEffectOpenGLRenderSuite,OfxVegasProgressSuite,OfxVegasStereoscopicImageEffectSuite,OfxVegasKeyframeSuite,OfxOpenCLProgramSuite,
+OFX DebugProxy: host description finished
+
+* Blackmagic Fusion
+
+OFX API version 1.0
+hostName=com.blackmagicdesign.Fusion
+hostLabel=Fusion
+hostVersion=9.0.2 ()
+hostIsBackground=0
+supportsOverlays=1
+supportsMultiResolution=1
+supportsTiles=0
+temporalClipAccess=1
+supportedComponents=OfxImageComponentRGBA
+supportedContexts=OfxImageEffectContextGeneral,OfxImageEffectContextRetimer,OfxImageEffectContextTransition,OfxImageEffectContextFilter,OfxImageEffectContextGenerator
+supportedPixelDepths=OfxBitDepthByte,OfxBitDepthShort,OfxBitDepthFloat
+supportsMultipleClipDepths=1
+supportsMultipleClipPARs=1
+supportsSetableFrameRate=0
+supportsSetableFielding=0
+supportsStringAnimation=1
+supportsCustomInteract=0
+supportsChoiceAnimation=1
+supportsBooleanAnimation=1
+supportsCustomAnimation=0
+supportsParametricAnimation=0
+canTransform=0
+maxParameters=-1
+pageRowCount=-1
+pageColumnCount=1
+isNatron=0
+supportsDynamicChoices=0
+supportsCascadingChoices=0
+supportsChannelSelector=0
+suites=OfxImageEffectSuite,OfxPropertySuite,OfxParameterSuite,OfxMemorySuite,OfxMultiThreadSuite,OfxMessageSuite,OfxProgressSuite,OfxTimeLineSuite
+
+- kOfxPropAPIVersion kOfxPropVersionLabel kOfxImageEffectInstancePropSequentialRender are not set on the host
+- unconnected clips have prop kOfxImageEffectPropPixelDepth=kOfxBitDepthNone
+- when scrubbing parameters (changing values fast), the renderScale in the inArgs is 1/3. but the renderScale on images is 3.

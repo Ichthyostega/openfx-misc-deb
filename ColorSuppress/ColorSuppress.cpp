@@ -270,8 +270,9 @@ public:
 
 private:
 
-    void multiThreadProcessImages(OfxRectI procWindow)
+    void multiThreadProcessImages(const OfxRectI& procWindow, const OfxPointD& rs) OVERRIDE FINAL
     {
+        unused(rs);
         assert(nComponents == 1 || nComponents == 3 || nComponents == 4);
         assert(_dstImg);
         float unpPix[4];
@@ -434,6 +435,7 @@ public:
         , _luminanceMath(NULL)
         , _premultChanged(NULL)
     {
+
         _dstClip = fetchClip(kOfxImageEffectOutputClipName);
         assert( _dstClip && (!_dstClip->isConnected() || _dstClip->getPixelComponents() == ePixelComponentRGB ||
                              _dstClip->getPixelComponents() == ePixelComponentRGBA ||
@@ -553,6 +555,7 @@ ColorSuppressPlugin::setupAndProcess(ColorSuppressProcessorBase &processor,
     if ( !dst.get() ) {
         throwSuiteStatusException(kOfxStatFailed);
     }
+# ifndef NDEBUG
     BitDepthEnum dstBitDepth    = dst->getPixelDepth();
     PixelComponentEnum dstComponents  = dst->getPixelComponents();
     if ( ( dstBitDepth != _dstClip->getPixelDepth() ) ||
@@ -560,38 +563,26 @@ ColorSuppressPlugin::setupAndProcess(ColorSuppressProcessorBase &processor,
         setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong depth or components");
         throwSuiteStatusException(kOfxStatFailed);
     }
-    if ( (dst->getRenderScale().x != args.renderScale.x) ||
-         (dst->getRenderScale().y != args.renderScale.y) ||
-         ( (dst->getField() != eFieldNone) /* for DaVinci Resolve */ && (dst->getField() != args.fieldToRender) ) ) {
-        setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-        throwSuiteStatusException(kOfxStatFailed);
-    }
+    checkBadRenderScaleOrField(dst, args);
+# endif
     auto_ptr<const Image> src( ( _srcClip && _srcClip->isConnected() ) ?
                                     _srcClip->fetchImage(time) : 0 );
+# ifndef NDEBUG
     if ( src.get() ) {
-        if ( (src->getRenderScale().x != args.renderScale.x) ||
-             (src->getRenderScale().y != args.renderScale.y) ||
-             ( (src->getField() != eFieldNone) /* for DaVinci Resolve */ && (src->getField() != args.fieldToRender) ) ) {
-            setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-            throwSuiteStatusException(kOfxStatFailed);
-        }
+        checkBadRenderScaleOrField(src, args);
         BitDepthEnum srcBitDepth      = src->getPixelDepth();
         PixelComponentEnum srcComponents = src->getPixelComponents();
         if ( (srcBitDepth != dstBitDepth) || (srcComponents != dstComponents) ) {
             throwSuiteStatusException(kOfxStatErrImageFormat);
         }
     }
+# endif
     bool doMasking = ( ( !_maskApply || _maskApply->getValueAtTime(time) ) && _maskClip && _maskClip->isConnected() );
     auto_ptr<const Image> mask(doMasking ? _maskClip->fetchImage(time) : 0);
     // do we do masking
     if (doMasking) {
         if ( mask.get() ) {
-            if ( (mask->getRenderScale().x != args.renderScale.x) ||
-                 (mask->getRenderScale().y != args.renderScale.y) ||
-                 ( (mask->getField() != eFieldNone) /* for DaVinci Resolve */ && (mask->getField() != args.fieldToRender) ) ) {
-                setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-                throwSuiteStatusException(kOfxStatFailed);
-            }
+            checkBadRenderScaleOrField(mask, args);
         }
         bool maskInvert = _maskInvert->getValueAtTime(time);
         processor.doMasking(true);
@@ -602,7 +593,7 @@ ColorSuppressPlugin::setupAndProcess(ColorSuppressProcessorBase &processor,
     processor.setDstImg( dst.get() );
     processor.setSrcImg( src.get() );
     // set the render window
-    processor.setRenderWindow(args.renderWindow);
+    processor.setRenderWindow(args.renderWindow, args.renderScale);
 
     double redSuppress = _redSuppress->getValueAtTime(time);
     double blueSuppress = _blueSuppress->getValueAtTime(time);
@@ -662,8 +653,8 @@ ColorSuppressPlugin::render(const RenderArguments &args)
     BitDepthEnum dstBitDepth    = _dstClip->getPixelDepth();
     PixelComponentEnum dstComponents  = _dstClip->getPixelComponents();
 
-    assert( kSupportsMultipleClipPARs   || !_srcClip || _srcClip->getPixelAspectRatio() == _dstClip->getPixelAspectRatio() );
-    assert( kSupportsMultipleClipDepths || !_srcClip || _srcClip->getPixelDepth()       == _dstClip->getPixelDepth() );
+    assert( kSupportsMultipleClipPARs   || !_srcClip || !_srcClip->isConnected() || _srcClip->getPixelAspectRatio() == _dstClip->getPixelAspectRatio() );
+    assert( kSupportsMultipleClipDepths || !_srcClip || !_srcClip->isConnected() || _srcClip->getPixelDepth()       == _dstClip->getPixelDepth() );
     assert(OFX_COMPONENTS_OK(dstComponents));
     // do the rendering
     if (dstComponents == ePixelComponentRGBA) {

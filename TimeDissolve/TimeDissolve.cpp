@@ -80,7 +80,6 @@ OFXS_NAMESPACE_ANONYMOUS_ENTER
 #define OFX_COMPONENTS_OK(c) ((c)== ePixelComponentAlpha || (c) == ePixelComponentRGB || (c) == ePixelComponentRGBA)
 #endif
 
-
 ////////////////////////////////////////////////////////////////////////////////
 /** @brief The plugin that does our work */
 class TimeDissolvePlugin
@@ -98,6 +97,7 @@ public:
         , _dissolveOut(NULL)
         , _dissolveCurve(NULL)
     {
+
         _dstClip = fetchClip(kOfxImageEffectOutputClipName);
         assert( _dstClip && (!_dstClip->isConnected() || OFX_COMPONENTS_OK(_dstClip->getPixelComponents())) );
 
@@ -160,6 +160,7 @@ private:
 ////////////////////////////////////////////////////////////////////////////////
 // basic plugin render function, just a skelington to instantiate templates from
 
+#ifndef NDEBUG
 // make sure components are sane
 static void
 checkComponents(const Image &src,
@@ -174,6 +175,7 @@ checkComponents(const Image &src,
         throwSuiteStatusException(kOfxStatErrImageFormat);
     }
 }
+#endif
 
 double
 TimeDissolvePlugin::getTransition(double time)
@@ -218,6 +220,7 @@ TimeDissolvePlugin::setupAndProcess(ImageBlenderBase &processor,
     if ( !dst.get() ) {
         throwSuiteStatusException(kOfxStatFailed);
     }
+# ifndef NDEBUG
     BitDepthEnum dstBitDepth    = dst->getPixelDepth();
     PixelComponentEnum dstComponents  = dst->getPixelComponents();
     if ( ( dstBitDepth != _dstClip->getPixelDepth() ) ||
@@ -225,12 +228,8 @@ TimeDissolvePlugin::setupAndProcess(ImageBlenderBase &processor,
         setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong depth or components");
         throwSuiteStatusException(kOfxStatFailed);
     }
-    if ( (dst->getRenderScale().x != args.renderScale.x) ||
-         ( dst->getRenderScale().y != args.renderScale.y) ||
-         ( ( dst->getField() != eFieldNone) /* for DaVinci Resolve */ && ( dst->getField() != args.fieldToRender) ) ) {
-        setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-        throwSuiteStatusException(kOfxStatFailed);
-    }
+    checkBadRenderScaleOrField(dst, args);
+# endif
 
     // get the transition value
     double which = getTransition(time);
@@ -240,20 +239,17 @@ TimeDissolvePlugin::setupAndProcess(ImageBlenderBase &processor,
                                         _srcClipA->fetchImage(time) :
                                         ( which == 1. && _srcClipB && _srcClipB->isConnected() ) ?
                                         _srcClipB->fetchImage(time) : 0 );
+#     ifndef NDEBUG
         if ( src.get() ) {
-            if ( (src->getRenderScale().x != args.renderScale.x) ||
-                 ( src->getRenderScale().y != args.renderScale.y) ||
-                 ( ( src->getField() != eFieldNone) /* for DaVinci Resolve */ && ( src->getField() != args.fieldToRender) ) ) {
-                setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-                throwSuiteStatusException(kOfxStatFailed);
-            }
+            checkBadRenderScaleOrField(src, args);
             BitDepthEnum srcBitDepth      = src->getPixelDepth();
             PixelComponentEnum srcComponents = src->getPixelComponents();
             if ( (srcBitDepth != dstBitDepth) || (srcComponents != dstComponents) ) {
                 throwSuiteStatusException(kOfxStatErrImageFormat);
             }
         }
-        copyPixels( *this, args.renderWindow, src.get(), dst.get() );
+#     endif
+        copyPixels( *this, args.renderWindow, args.renderScale, src.get(), dst.get() );
 
         return;
     }
@@ -264,25 +260,17 @@ TimeDissolvePlugin::setupAndProcess(ImageBlenderBase &processor,
     auto_ptr<const Image> toImg( ( _srcClipB && _srcClipB->isConnected() ) ?
                                       _srcClipB->fetchImage(time) : 0 );
 
+# ifndef NDEBUG
     // make sure bit depths are sane
     if ( fromImg.get() ) {
-        if ( (fromImg->getRenderScale().x != args.renderScale.x) ||
-             ( fromImg->getRenderScale().y != args.renderScale.y) ||
-             ( ( fromImg->getField() != eFieldNone) /* for DaVinci Resolve */ && ( fromImg->getField() != args.fieldToRender) ) ) {
-            setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-            throwSuiteStatusException(kOfxStatFailed);
-        }
+        checkBadRenderScaleOrField(fromImg, args);
         checkComponents(*fromImg, dstBitDepth, dstComponents);
     }
     if ( toImg.get() ) {
-        if ( (toImg->getRenderScale().x != args.renderScale.x) ||
-             ( toImg->getRenderScale().y != args.renderScale.y) ||
-             ( ( toImg->getField() != eFieldNone) /* for DaVinci Resolve */ && ( toImg->getField() != args.fieldToRender) ) ) {
-            setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-            throwSuiteStatusException(kOfxStatFailed);
-        }
+        checkBadRenderScaleOrField(toImg, args);
         checkComponents(*toImg, dstBitDepth, dstComponents);
     }
+# endif
 
     // set the images
     processor.setDstImg( dst.get() );
@@ -290,7 +278,7 @@ TimeDissolvePlugin::setupAndProcess(ImageBlenderBase &processor,
     processor.setToImg( toImg.get() );
 
     // set the render window
-    processor.setRenderWindow(args.renderWindow);
+    processor.setRenderWindow(args.renderWindow, args.renderScale);
 
     // set the scales
     processor.setBlend(which);
@@ -553,10 +541,10 @@ TimeDissolvePluginFactory::describeInContext(ImageEffectDescriptor &desc,
             page->addChild(*param);
         }
     }
-    const ImageEffectHostDescription &gHostDescription = *getImageEffectHostDescription();
-    const bool supportsParametricParameter = ( gHostDescription.supportsParametricParameter &&
-                                               !(gHostDescription.hostName == "uk.co.thefoundry.nuke" &&
-                                                 8 <= gHostDescription.versionMajor && gHostDescription.versionMajor <= 11) );  // Nuke 8-11.1 are known to *not* support Parametric
+    const ImageEffectHostDescription &hostDescription = *getImageEffectHostDescription();
+    const bool supportsParametricParameter = ( hostDescription.supportsParametricParameter &&
+                                               !(hostDescription.hostName == "uk.co.thefoundry.nuke" &&
+                                                 8 <= hostDescription.versionMajor && hostDescription.versionMajor <= 11) );  // Nuke 8-11.1 are known to *not* support Parametric
     if (supportsParametricParameter) {
         ParametricParamDescriptor* param = desc.defineParametricParam(kParamCurve);
         assert(param);
@@ -592,10 +580,10 @@ ImageEffect*
 TimeDissolvePluginFactory::createInstance(OfxImageEffectHandle handle,
                                           ContextEnum /*context*/)
 {
-    const ImageEffectHostDescription &gHostDescription = *getImageEffectHostDescription();
-    const bool supportsParametricParameter = ( gHostDescription.supportsParametricParameter &&
-                                               !(gHostDescription.hostName == "uk.co.thefoundry.nuke" &&
-                                                 8 <= gHostDescription.versionMajor && gHostDescription.versionMajor <= 11) );  // Nuke 8-11.1 are known to *not* support Parametric
+    const ImageEffectHostDescription &hostDescription = *getImageEffectHostDescription();
+    const bool supportsParametricParameter = ( hostDescription.supportsParametricParameter &&
+                                               !(hostDescription.hostName == "uk.co.thefoundry.nuke" &&
+                                                 8 <= hostDescription.versionMajor && hostDescription.versionMajor <= 11) );  // Nuke 8-11.1 are known to *not* support Parametric
 
     return new TimeDissolvePlugin(handle, supportsParametricParameter);
 }

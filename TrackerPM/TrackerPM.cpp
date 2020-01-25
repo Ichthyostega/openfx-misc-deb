@@ -108,6 +108,7 @@ public:
         , _outerBtmLeft(NULL)
         , _outerTopRight(NULL)
     {
+
         _maskClip = fetchClip(getContext() == eContextPaint ? "Brush" : "Mask");
         assert(!_maskClip || !_maskClip->isConnected() || _maskClip->getPixelComponents() == ePixelComponentAlpha);
         _score = fetchChoiceParam(kParamScore);
@@ -245,7 +246,7 @@ private:
                            const Image *other,
                            const Image *mask,
                            const OfxRectI& pattern,
-                           const OfxPointI& centeri)
+                           const OfxPointI& centeri) OVERRIDE FINAL
     {
         size_t rowsize = pattern.x2 - pattern.x1;
         size_t nPix = rowsize * (pattern.y2 - pattern.y1);
@@ -304,21 +305,21 @@ private:
         return (_weightTotal > 0);
     } // setValues
 
-    void multiThreadProcessImages(OfxRectI procWindow)
+    void multiThreadProcessImages(const OfxRectI& procWindow, const OfxPointD& rs) OVERRIDE FINAL
     {
         switch (scoreType) {
         case eTrackerSSD:
 
-            return multiThreadProcessImagesForScore<eTrackerSSD>(procWindow);
+            return multiThreadProcessImagesForScore<eTrackerSSD>(procWindow, rs);
         case eTrackerSAD:
 
-            return multiThreadProcessImagesForScore<eTrackerSAD>(procWindow);
+            return multiThreadProcessImagesForScore<eTrackerSAD>(procWindow, rs);
         case eTrackerNCC:
 
-            return multiThreadProcessImagesForScore<eTrackerNCC>(procWindow);
+            return multiThreadProcessImagesForScore<eTrackerNCC>(procWindow, rs);
         case eTrackerZNCC:
 
-            return multiThreadProcessImagesForScore<eTrackerZNCC>(procWindow);
+            return multiThreadProcessImagesForScore<eTrackerZNCC>(procWindow, rs);
         }
     }
 
@@ -413,8 +414,10 @@ private:
     } // computeScore
 
     template<enum TrackerScoreEnum scoreTypeE>
-    void multiThreadProcessImagesForScore(const OfxRectI& procWindow)
+    void multiThreadProcessImagesForScore(const OfxRectI& procWindow, const OfxPointD& rs)
     {
+        unused(rs);
+        assert(rs.x == 1. && rs.y == 1.);
         assert(_patternImg.get() && _patternData && _weightImg.get() && _weightData && _otherImg && _weightTotal > 0.);
         assert(scoreType == scoreTypeE);
         double bestScore = std::numeric_limits<double>::infinity();
@@ -733,7 +736,7 @@ TrackerPMPlugin::setupAndProcess(TrackerPMProcessorBase &processor,
     refRectPixel.y2 -= refCenterI.y;
 
     // set the render window
-    processor.setRenderWindow(trackSearchBoundsPixel);
+    processor.setRenderWindow(trackSearchBoundsPixel, rsOne);
 
     bool canProcess = processor.setValues(refImg, otherImg, maskImg, refRectPixel, refCenterI);
 
@@ -866,26 +869,14 @@ TrackerPMPlugin::trackInternal(OfxTime refTime,
     if ( !srcRef.get() || !srcOther.get() ) {
         return;
     }
+    // renderScale should never be something else than 1 when called from ActionInstanceChanged
     if ( srcRef.get() ) {
-        if ( (srcRef->getRenderScale().x != args.renderScale.x) ||
-             ( srcRef->getRenderScale().y != args.renderScale.y) ) {
-            setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-            throwSuiteStatusException(kOfxStatFailed);
-        }
+        checkBadRenderScale(srcRef, args);
+        checkRenderScaleOne(srcRef);
     }
     if ( srcOther.get() ) {
-        if ( (srcOther->getRenderScale().x != args.renderScale.x) ||
-             ( srcOther->getRenderScale().y != args.renderScale.y) ) {
-            setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-            throwSuiteStatusException(kOfxStatFailed);
-        }
-    }
-    // renderScale should never be something else than 1 when called from ActionInstanceChanged
-    if ( ( srcRef->getPixelDepth() != srcOther->getPixelDepth() ) ||
-         ( srcRef->getPixelComponents() != srcOther->getPixelComponents() ) ||
-         ( srcRef->getRenderScale().x != 1.) || ( srcRef->getRenderScale().y != 1) ||
-         ( srcOther->getRenderScale().x != 1.) || ( srcOther->getRenderScale().y != 1) ) {
-        throwSuiteStatusException(kOfxStatErrImageFormat);
+        checkBadRenderScale(srcOther, args);
+        checkRenderScaleOne(srcOther);
     }
 
     BitDepthEnum srcBitDepth = srcRef->getPixelDepth();
@@ -895,11 +886,7 @@ TrackerPMPlugin::trackInternal(OfxTime refTime,
     auto_ptr<const Image> mask( ( _maskClip && _maskClip->isConnected() ) ?
                                      _maskClip->fetchImage(refTime) : 0 );
     if ( mask.get() ) {
-        if ( (mask->getRenderScale().x != args.renderScale.x) ||
-             ( mask->getRenderScale().y != args.renderScale.y) ) {
-            setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-            throwSuiteStatusException(kOfxStatFailed);
-        }
+        checkBadRenderScale(mask, args);
     }
 
     OfxRectD trackSearchBounds;

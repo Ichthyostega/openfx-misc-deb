@@ -59,7 +59,7 @@ OFXS_NAMESPACE_ANONYMOUS_ENTER
 #define kPluginDescriptionMidRGB \
     "Note that if an input with only RGB components is connected to A or B, its alpha channel " \
     "is considered to be transparent (zero) by default, and the \"A\" checkbox for the given " \
-    "input is automatically unchecked, unless it is set explicitely by the user.  In fact, " \
+    "input is automatically unchecked, unless it is set explicitly by the user.  In fact, " \
     "most of the time, RGB images without an alpha channel are only used as background images " \
     "in the B input, and should be considered as transparent, since they should not occlude " \
     "anything. That way, the alpha channel on output only contains the opacity of elements " \
@@ -197,8 +197,8 @@ enum BBoxEnum
 #define kParamOutputChannelsALabel "A"
 #define kParamOutputChannelsAHint  "Write alpha component to output."
 
-#define kParamAChannelsAChanged "aChannelsChanged" // did the user explicitely change the "A" checkbox for A input?
-#define kParamBChannelsAChanged "bChannelsChanged" // did the user explicitely change the "A" checkbox for B input?
+#define kParamAChannelsAChanged "aChannelsChanged" // did the user explicitly change the "A" checkbox for A input?
+#define kParamBChannelsAChanged "bChannelsChanged" // did the user explicitly change the "A" checkbox for B input?
 
 #define kRotoMaskPlaneID "RotoMask"
 
@@ -377,8 +377,9 @@ public:
     }
 
 private:
-    void multiThreadProcessImages(OfxRectI procWindow)
+    void multiThreadProcessImages(const OfxRectI& procWindow, const OfxPointD& rs) OVERRIDE FINAL
     {
+        unused(rs);
         float tmpPix[nComponents];
         float tmpA[nComponents];
         float tmpB[nComponents];
@@ -598,6 +599,7 @@ public:
     , _aChannelAChanged(NULL)
     , _bChannelAChanged(NULL)
     {
+
         _dstClip = fetchClip(kOfxImageEffectOutputClipName);
         assert( _dstClip && (!_dstClip->isConnected() || OFX_COMPONENTS_OK(_dstClip->getPixelComponents())) );
         _srcClipAs.push_back( fetchClip(kClipA) );
@@ -903,6 +905,7 @@ MergePlugin::setupAndProcess(MergeProcessorBase &processor,
     if ( !dst.get() ) {
         throwSuiteStatusException(kOfxStatFailed);
     }
+# ifndef NDEBUG
     BitDepthEnum dstBitDepth = _dstClip->getPixelDepth();
     PixelComponentEnum dstComponents  = _dstClip->getPixelComponents();
     if (dst.get() && _pluginType != eMergePluginRoto) {
@@ -913,13 +916,9 @@ MergePlugin::setupAndProcess(MergeProcessorBase &processor,
             setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong depth or components");
             throwSuiteStatusException(kOfxStatFailed);
         }
-        if ( (dst->getRenderScale().x != args.renderScale.x) ||
-            ( dst->getRenderScale().y != args.renderScale.y) ||
-            ( ( dst->getField() != eFieldNone) /* for DaVinci Resolve */ && ( dst->getField() != args.fieldToRender) ) ) {
-            setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-            throwSuiteStatusException(kOfxStatFailed);
-        }
+        checkBadRenderScaleOrField(dst, args);
     }
+# endif
     auto_ptr<const Image> srcB( ( !renderRotoMask && _srcClipB && _srcClipB->isConnected() ) ?
                                     _srcClipB->fetchImage(time) : 0 );
     OptionalImagesHolder_RAII srcAs;
@@ -937,17 +936,14 @@ MergePlugin::setupAndProcess(MergeProcessorBase &processor,
                 if (srcA) {
                     srcAs.images.push_back(srcA);
 
-                    if ( (srcA->getRenderScale().x != args.renderScale.x) ||
-                        ( srcA->getRenderScale().y != args.renderScale.y) ||
-                        ( ( srcA->getField() != eFieldNone) /* for DaVinci Resolve */ && ( srcA->getField() != args.fieldToRender) ) ) {
-                        setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-                        throwSuiteStatusException(kOfxStatFailed);
-                    }
+#                 ifndef NDEBUG
+                    checkBadRenderScaleOrField(srcA, args);
                     BitDepthEnum srcBitDepth      = srcA->getPixelDepth();
                     PixelComponentEnum srcComponents = srcA->getPixelComponents();
                     if ( (srcBitDepth != dstBitDepth) || (srcComponents != dstComponents) ) {
                         throwSuiteStatusException(kOfxStatErrImageFormat);
                     }
+#                 endif
 #ifdef OFX_EXTENSIONS_NUKE
                     if (_pluginType == eMergePluginRoto) {
                         const Image* rotoMaskA = _srcClipAs[i]->fetchImagePlane(time, args.renderView, rotoMaskOfxPlaneStr.c_str());
@@ -961,19 +957,16 @@ MergePlugin::setupAndProcess(MergeProcessorBase &processor,
         }
     }
 
+# ifndef NDEBUG
     if ( srcB.get() ) {
-        if ( (srcB->getRenderScale().x != args.renderScale.x) ||
-             ( srcB->getRenderScale().y != args.renderScale.y) ||
-             ( ( srcB->getField() != eFieldNone) /* for DaVinci Resolve */ && ( srcB->getField() != args.fieldToRender) ) ) {
-            setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-            throwSuiteStatusException(kOfxStatFailed);
-        }
+        checkBadRenderScaleOrField(srcB, args);
         BitDepthEnum srcBitDepth      = srcB->getPixelDepth();
         PixelComponentEnum srcComponents = srcB->getPixelComponents();
         if ( (srcBitDepth != dstBitDepth) || (srcComponents != dstComponents) ) {
             throwSuiteStatusException(kOfxStatErrImageFormat);
         }
     }
+# endif
 
     // auto ptr for the mask.
     bool doMasking = ( ( !_maskApply || _maskApply->getValueAtTime(time) ) && _maskClip && _maskClip->isConnected() );
@@ -1003,7 +996,7 @@ MergePlugin::setupAndProcess(MergeProcessorBase &processor,
     }
 
     const Image* rotoMaskImgB = 0;
-    if (_pluginType == eMergePluginRoto) {
+    if (_pluginType == eMergePluginRoto && _srcClipB) {
 #ifdef OFX_EXTENSIONS_NUKE
         rotoMaskImgB = _srcClipB->fetchImagePlane(time, args.renderView, rotoMaskOfxPlaneStr.c_str());
 #endif
@@ -1033,7 +1026,7 @@ MergePlugin::setupAndProcess(MergeProcessorBase &processor,
         outputChannels[c] = _outputChannels[c]->getValueAtTime(time);
     }
     processor.setValues(alphaMasking, mix, aChannels, bChannels, outputChannels);
-    processor.setRenderWindow(args.renderWindow);
+    processor.setRenderWindow(args.renderWindow, args.renderScale);
 
     processor.process();
 } // MergePlugin::setupAndProcess
@@ -1924,7 +1917,7 @@ MergePluginFactory<plugin>::describeInContext(ImageEffectDescriptor &desc,
 
 
     if ( getImageEffectHostDescription()->supportsPixelComponent(ePixelComponentRGB) ) {
-        // two hidden parameters to keep track of the fact that the user explicitely checked or unchecked tha "A" checkbox
+        // two hidden parameters to keep track of the fact that the user explicitly checked or unchecked tha "A" checkbox
         {
             BooleanParamDescriptor* param = desc.defineBooleanParam(kParamAChannelsAChanged);
             param->setDefault(false);

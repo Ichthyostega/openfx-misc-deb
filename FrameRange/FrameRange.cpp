@@ -78,14 +78,47 @@ OFXS_NAMESPACE_ANONYMOUS_ENTER
 #define kParamBeforeAfterOptionOriginal "Original", "Return the original frame from the source, even if it is out of the frame range.", "original"
 #define kParamBeforeAfterOptionHold "Hold", "Return the nearest frame within the frame range.", "hold"
 #define kParamBeforeAfterOptionBlack "Black", "Return an empty frame.", "black"
+#define kParamBeforeAfterOptionLoop "Loop", "Substitutes an equal number of frames, effectively creating a clip loop.", "loop"
+#define kParamBeforeAfterOptionBounce "Bounce", "Substitutes a reversed equal number of frames, creating a clip bounce.", "loop"
 
 enum BeforeAfterEnum
 {
     eBeforeAfterOriginal = 0,
     eBeforeAfterHold,
     eBeforeAfterBlack,
+    eBeforeAfterLoop,
+    eBeforeAfterBounce,
 };
 
+// returns a frame between x and y for frame f
+static int frameBounce(int x, int y, int f)
+{
+    if (f > y) {
+        f = x + (f - x) % ((y-x)*2);
+        if (f > y) {
+            f = y - (f - y);
+        }
+    } else if (f < x) {
+        f = y - (y - f) % ((y-x)*2);
+        if (f < x) {
+            f = x + (x - f);
+        }
+    }
+    assert(x <= f && f <= y);
+    return f;
+}
+
+// returns a frame between x and y for frame f
+static int frameLoop(int x, int y, int f)
+{
+    if (f > y) {
+        f = x + (f - x) % (y+1-x);
+    } else if (f < x) {
+        f = y - (y - f) % (y+1-x);
+    }
+    assert(x <= f && f <= y);
+    return f;
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 /** @brief The plugin that does our work */
@@ -103,6 +136,7 @@ public:
         , _after(NULL)
         , _sublabel(NULL)
     {
+
         _dstClip = fetchClip(kOfxImageEffectOutputClipName);
         _srcClip = getContext() == eContextGenerator ? NULL : fetchClip(kOfxImageEffectSimpleSourceClipName);
         _frameRange = fetchInt2DParam(kParamFrameRange);
@@ -154,11 +188,11 @@ FrameRangePlugin::getClipPreferences(ClipPreferencesSetter &clipPreferences)
     // setting an image to black outside of the frame range means that the effect is frame varying
     BeforeAfterEnum before = (BeforeAfterEnum)_before->getValue();
 
-    if (before == eBeforeAfterBlack) {
+    if (before == eBeforeAfterBlack || before == eBeforeAfterLoop || before == eBeforeAfterBounce) {
         clipPreferences.setOutputFrameVarying(true);
     } else {
         BeforeAfterEnum after = (BeforeAfterEnum)_after->getValue();
-        if (after == eBeforeAfterBlack) {
+        if (after == eBeforeAfterBlack || after == eBeforeAfterLoop || after == eBeforeAfterBounce) {
             clipPreferences.setOutputFrameVarying(true);
         }
     }
@@ -186,6 +220,10 @@ FrameRangePlugin::render(const RenderArguments &args)
             black = true;
         } else if (before == eBeforeAfterHold) {
             srcTime = range.x;
+        } else if (before == eBeforeAfterLoop) {
+            srcTime = frameLoop(range.x, range.y, time);
+        } else if (before == eBeforeAfterBounce) {
+            srcTime = frameBounce(range.x, range.y, time);
         }
     } else if (time > range.y) {
         BeforeAfterEnum after = (BeforeAfterEnum)_after->getValue();
@@ -193,43 +231,39 @@ FrameRangePlugin::render(const RenderArguments &args)
             black = true;
         } else if (after == eBeforeAfterHold) {
             srcTime = range.y;
+        } else if (after == eBeforeAfterLoop) {
+            srcTime = frameLoop(range.x, range.y, time);
+        } else if (after == eBeforeAfterBounce) {
+            srcTime = frameBounce(range.x, range.y, time);
         }
     }
 
-    assert( kSupportsMultipleClipPARs   || !_srcClip || _srcClip->getPixelAspectRatio() == _dstClip->getPixelAspectRatio() );
-    assert( kSupportsMultipleClipDepths || !_srcClip || _srcClip->getPixelDepth()       == _dstClip->getPixelDepth() );
+    assert( kSupportsMultipleClipPARs   || !_srcClip || !_srcClip->isConnected() || _srcClip->getPixelAspectRatio() == _dstClip->getPixelAspectRatio() );
+    assert( kSupportsMultipleClipDepths || !_srcClip || !_srcClip->isConnected() || _srcClip->getPixelDepth()       == _dstClip->getPixelDepth() );
     // do the rendering
     auto_ptr<Image> dst( _dstClip->fetchImage(args.time) );
     if ( !dst.get() ) {
         throwSuiteStatusException(kOfxStatFailed);
     }
-    if ( (dst->getRenderScale().x != args.renderScale.x) ||
-         ( dst->getRenderScale().y != args.renderScale.y) ||
-         ( ( dst->getField() != eFieldNone) /* for DaVinci Resolve */ && ( dst->getField() != args.fieldToRender) ) ) {
-        setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-        throwSuiteStatusException(kOfxStatFailed);
-    }
-    BitDepthEnum dstBitDepth       = dst->getPixelDepth();
-    PixelComponentEnum dstComponents  = dst->getPixelComponents();
+    checkBadRenderScaleOrField(dst, args);
     auto_ptr<const Image> src( (_srcClip && _srcClip->isConnected() && !black) ?
                                     _srcClip->fetchImage(srcTime) : 0 );
+# ifndef NDEBUG
     if ( src.get() ) {
-        if ( (src->getRenderScale().x != args.renderScale.x) ||
-             ( src->getRenderScale().y != args.renderScale.y) ||
-             ( ( src->getField() != eFieldNone) /* for DaVinci Resolve */ && ( src->getField() != args.fieldToRender) ) ) {
-            setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-            throwSuiteStatusException(kOfxStatFailed);
-        }
+        checkBadRenderScaleOrField(src, args);
+        BitDepthEnum dstBitDepth       = dst->getPixelDepth();
+        PixelComponentEnum dstComponents  = dst->getPixelComponents();
         BitDepthEnum srcBitDepth      = src->getPixelDepth();
         PixelComponentEnum srcComponents = src->getPixelComponents();
         if ( (srcBitDepth != dstBitDepth) || (srcComponents != dstComponents) ) {
             throwSuiteStatusException(kOfxStatErrImageFormat);
         }
     }
+# endif
     if (black) {
-        fillBlack( *this, args.renderWindow, dst.get() );
+        fillBlack( *this, args.renderWindow, args.renderScale, dst.get() );
     } else {
-        copyPixels( *this, args.renderWindow, src.get(), dst.get() );
+        copyPixels( *this, args.renderWindow, args.renderScale, src.get(), dst.get() );
     }
 } // FrameRangePlugin::render
 
@@ -248,6 +282,10 @@ FrameRangePlugin::isIdentity(const IsIdentityArguments &args,
             return false;
         } else if (before == eBeforeAfterHold) {
             identityTime = range.x;
+        } else if (before == eBeforeAfterLoop) {
+            identityTime = frameLoop(range.x, range.y, time);
+        } else if (before == eBeforeAfterBounce) {
+            identityTime = frameBounce(range.x, range.y, time);
         }
     } else if (time > range.y) {
         BeforeAfterEnum after = (BeforeAfterEnum)_after->getValue();
@@ -255,6 +293,10 @@ FrameRangePlugin::isIdentity(const IsIdentityArguments &args,
             return false;
         } else if (after == eBeforeAfterHold) {
             identityTime = range.y;
+        } else if (after == eBeforeAfterLoop) {
+            identityTime = frameLoop(range.x, range.y, time);
+        } else if (after == eBeforeAfterBounce) {
+            identityTime = frameBounce(range.x, range.y, time);
         }
     }
     identityClip = _srcClip;
@@ -281,6 +323,14 @@ FrameRangePlugin::getRegionOfDefinition(const RegionOfDefinitionArguments &args,
             rod = _srcClip->getRegionOfDefinition(range.x);
 
             return true;
+        } else if (before == eBeforeAfterLoop) {
+            rod = _srcClip->getRegionOfDefinition( frameLoop(range.x, range.y, time) );
+
+            return true;
+        } else if (before == eBeforeAfterBounce) {
+            rod = _srcClip->getRegionOfDefinition( frameBounce(range.x, range.y, time) );
+
+            return true;
         }
     } else if (time > range.y) {
         BeforeAfterEnum after = (BeforeAfterEnum)_after->getValue();
@@ -290,6 +340,14 @@ FrameRangePlugin::getRegionOfDefinition(const RegionOfDefinitionArguments &args,
             return true;
         } else if (after == eBeforeAfterHold) {
             rod = _srcClip->getRegionOfDefinition(range.y);
+
+            return true;
+        } else if (after == eBeforeAfterLoop) {
+            rod = _srcClip->getRegionOfDefinition(frameLoop(range.x, range.y, time));
+
+            return true;
+        } else if (after == eBeforeAfterBounce) {
+            rod = _srcClip->getRegionOfDefinition(frameBounce(range.x, range.y, time));
 
             return true;
         }
@@ -509,6 +567,10 @@ FrameRangePluginFactory::describeInContext(ImageEffectDescriptor &desc,
         param->appendOption(kParamBeforeAfterOptionHold);
         assert(param->getNOptions() == (int)eBeforeAfterBlack);
         param->appendOption(kParamBeforeAfterOptionBlack);
+        assert(param->getNOptions() == (int)eBeforeAfterLoop);
+        param->appendOption(kParamBeforeAfterOptionLoop);
+        assert(param->getNOptions() == (int)eBeforeAfterBounce);
+        param->appendOption(kParamBeforeAfterOptionBounce);
         param->setDefault( (int)eBeforeAfterBlack );
         param->setAnimates(false);
         if (page) {
@@ -526,6 +588,10 @@ FrameRangePluginFactory::describeInContext(ImageEffectDescriptor &desc,
         param->appendOption(kParamBeforeAfterOptionHold);
         assert(param->getNOptions() == (int)eBeforeAfterBlack);
         param->appendOption(kParamBeforeAfterOptionBlack);
+        assert(param->getNOptions() == (int)eBeforeAfterLoop);
+        param->appendOption(kParamBeforeAfterOptionLoop);
+        assert(param->getNOptions() == (int)eBeforeAfterBounce);
+        param->appendOption(kParamBeforeAfterOptionBounce);
         param->setDefault( (int)eBeforeAfterBlack );
         param->setAnimates(false);
         if (page) {

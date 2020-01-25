@@ -25,6 +25,9 @@
 #include <algorithm>
 
 #ifdef __APPLE__
+#ifndef GL_SILENCE_DEPRECATION
+#define GL_SILENCE_DEPRECATION // Yes, we are still doing OpenGL 2.1
+#endif
 #include <OpenGL/gl.h>
 #else
 #ifdef _WIN32
@@ -225,6 +228,7 @@ HueCorrectProcessorBase::clamp<float>(float value,
                                       int maxValue)
 {
     assert(maxValue == 1.);
+    unused(maxValue);
     if ( _clampBlack && (value < 0.) ) {
         value = 0.f;
     } else if ( _clampWhite && (value > 1.0) ) {
@@ -307,8 +311,9 @@ public:
 
 private:
     // and do some processing
-    void multiThreadProcessImages(OfxRectI procWindow)
+    void multiThreadProcessImages(const OfxRectI& procWindow, const OfxPointD& rs) OVERRIDE FINAL
     {
+        unused(rs);
         assert(nComponents == 3 || nComponents == 4);
         assert(_dstImg);
         float tmpPix[4];
@@ -454,6 +459,7 @@ public:
         , _luminanceMath(NULL)
         , _premultChanged(NULL)
     {
+
         _dstClip = fetchClip(kOfxImageEffectOutputClipName);
         assert( _dstClip && (!_dstClip->isConnected() || _dstClip->getPixelComponents() == ePixelComponentAlpha ||
                              _dstClip->getPixelComponents() == ePixelComponentRGB ||
@@ -541,6 +547,7 @@ HueCorrectPlugin::setupAndProcess(HueCorrectProcessorBase &processor,
     if ( !dst.get() ) {
         throwSuiteStatusException(kOfxStatFailed);
     }
+# ifndef NDEBUG
     BitDepthEnum dstBitDepth    = dst->getPixelDepth();
     PixelComponentEnum dstComponents  = dst->getPixelComponents();
     if ( ( dstBitDepth != _dstClip->getPixelDepth() ) ||
@@ -548,37 +555,25 @@ HueCorrectPlugin::setupAndProcess(HueCorrectProcessorBase &processor,
         setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong depth or components");
         throwSuiteStatusException(kOfxStatFailed);
     }
-    if ( (dst->getRenderScale().x != args.renderScale.x) ||
-         ( dst->getRenderScale().y != args.renderScale.y) ||
-         ( ( dst->getField() != eFieldNone) /* for DaVinci Resolve */ && ( dst->getField() != args.fieldToRender) ) ) {
-        setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-        throwSuiteStatusException(kOfxStatFailed);
-    }
+    checkBadRenderScaleOrField(dst, args);
+# endif
     auto_ptr<const Image> src( ( _srcClip && _srcClip->isConnected() ) ?
                                     _srcClip->fetchImage(time) : 0 );
+# ifndef NDEBUG
     if ( src.get() ) {
-        if ( (src->getRenderScale().x != args.renderScale.x) ||
-             ( src->getRenderScale().y != args.renderScale.y) ||
-             ( ( src->getField() != eFieldNone) /* for DaVinci Resolve */ && ( src->getField() != args.fieldToRender) ) ) {
-            setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-            throwSuiteStatusException(kOfxStatFailed);
-        }
+        checkBadRenderScaleOrField(src, args);
         BitDepthEnum srcBitDepth      = src->getPixelDepth();
         PixelComponentEnum srcComponents = src->getPixelComponents();
         if ( (srcBitDepth != dstBitDepth) || (srcComponents != dstComponents) ) {
             throwSuiteStatusException(kOfxStatErrImageFormat);
         }
     }
+# endif
     bool doMasking = ( ( !_maskApply || _maskApply->getValueAtTime(time) ) && _maskClip && _maskClip->isConnected() );
     auto_ptr<const Image> mask(doMasking ? _maskClip->fetchImage(time) : 0);
     if (doMasking) {
         if ( mask.get() ) {
-            if ( (mask->getRenderScale().x != args.renderScale.x) ||
-                 ( mask->getRenderScale().y != args.renderScale.y) ||
-                 ( ( mask->getField() != eFieldNone) /* for DaVinci Resolve */ && ( mask->getField() != args.fieldToRender) ) ) {
-                setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-                throwSuiteStatusException(kOfxStatFailed);
-            }
+            checkBadRenderScaleOrField(mask, args);
         }
         bool maskInvert;
         _maskInvert->getValueAtTime(time, maskInvert);
@@ -586,6 +581,7 @@ HueCorrectPlugin::setupAndProcess(HueCorrectProcessorBase &processor,
         processor.setMaskImg(mask.get(), maskInvert);
     }
 
+# ifndef NDEBUG
     if ( src.get() && dst.get() ) {
         BitDepthEnum srcBitDepth      = src->getPixelDepth();
         PixelComponentEnum srcComponents = src->getPixelComponents();
@@ -597,10 +593,11 @@ HueCorrectPlugin::setupAndProcess(HueCorrectProcessorBase &processor,
             throwSuiteStatusException(kOfxStatErrImageFormat);
         }
     }
+# endif
 
     processor.setDstImg( dst.get() );
     processor.setSrcImg( src.get() );
-    processor.setRenderWindow(args.renderWindow);
+    processor.setRenderWindow(args.renderWindow, args.renderScale);
     LuminanceMathEnum luminanceMath = (LuminanceMathEnum)_luminanceMath->getValueAtTime(time);
     bool luminanceMixEnable = _luminanceMixEnable->getValueAtTime(time);
     double luminanceMix = luminanceMixEnable ? _luminanceMix->getValueAtTime(time) : 0;
@@ -648,8 +645,8 @@ HueCorrectPlugin::render(const RenderArguments &args)
     BitDepthEnum dstBitDepth    = _dstClip->getPixelDepth();
     PixelComponentEnum dstComponents  = _dstClip->getPixelComponents();
 
-    assert( kSupportsMultipleClipPARs   || !_srcClip || _srcClip->getPixelAspectRatio() == _dstClip->getPixelAspectRatio() );
-    assert( kSupportsMultipleClipDepths || !_srcClip || _srcClip->getPixelDepth()       == _dstClip->getPixelDepth() );
+    assert( kSupportsMultipleClipPARs   || !_srcClip || !_srcClip->isConnected() || _srcClip->getPixelAspectRatio() == _dstClip->getPixelAspectRatio() );
+    assert( kSupportsMultipleClipDepths || !_srcClip || !_srcClip->isConnected() || _srcClip->getPixelDepth()       == _dstClip->getPixelDepth() );
     if (dstComponents == ePixelComponentRGBA) {
         renderForComponents<4>(args, dstBitDepth);
     } else if (dstComponents == ePixelComponentRGB) {
@@ -858,10 +855,10 @@ void
 HueCorrectPluginFactory::describeInContext(ImageEffectDescriptor &desc,
                                            ContextEnum context)
 {
-    const ImageEffectHostDescription &gHostDescription = *getImageEffectHostDescription();
-    const bool supportsParametricParameter = ( gHostDescription.supportsParametricParameter &&
-                                               !(gHostDescription.hostName == "uk.co.thefoundry.nuke" &&
-                                                 8 <= gHostDescription.versionMajor && gHostDescription.versionMajor <= 11) );  // Nuke 8-11.1 are known to *not* support Parametric
+    const ImageEffectHostDescription &hostDescription = *getImageEffectHostDescription();
+    const bool supportsParametricParameter = ( hostDescription.supportsParametricParameter &&
+                                               !(hostDescription.hostName == "uk.co.thefoundry.nuke" &&
+                                                 8 <= hostDescription.versionMajor && hostDescription.versionMajor <= 11) );  // Nuke 8-11.1 are known to *not* support Parametric
 
     if (!supportsParametricParameter) {
         throwHostMissingSuiteException(kOfxParametricParameterSuite);
@@ -1198,8 +1195,9 @@ public:
 
 private:
     // and do some processing
-    void multiThreadProcessImages(OfxRectI procWindow)
+    void multiThreadProcessImages(const OfxRectI& procWindow, const OfxPointD& rs) OVERRIDE FINAL
     {
+        unused(rs);
         assert(nComponents == 4);
         assert(_dstImg);
         for (int y = procWindow.y1; y < procWindow.y2; y++) {
@@ -1277,6 +1275,7 @@ public:
         , _dstClip(NULL)
         , _srcClip(NULL)
     {
+
         _dstClip = fetchClip(kOfxImageEffectOutputClipName);
         assert( _dstClip && (!_dstClip->isConnected() || _dstClip->getPixelComponents() == ePixelComponentAlpha ||
                              _dstClip->getPixelComponents() == ePixelComponentRGB ||
@@ -1316,6 +1315,7 @@ HueKeyerPlugin::setupAndProcess(HueKeyerProcessorBase &processor,
     if ( !dst.get() ) {
         throwSuiteStatusException(kOfxStatFailed);
     }
+# ifndef NDEBUG
     BitDepthEnum dstBitDepth    = dst->getPixelDepth();
     PixelComponentEnum dstComponents  = dst->getPixelComponents();
     if ( ( dstBitDepth != _dstClip->getPixelDepth() ) ||
@@ -1323,21 +1323,13 @@ HueKeyerPlugin::setupAndProcess(HueKeyerProcessorBase &processor,
         setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong depth or components");
         throwSuiteStatusException(kOfxStatFailed);
     }
-    if ( (dst->getRenderScale().x != args.renderScale.x) ||
-         ( dst->getRenderScale().y != args.renderScale.y) ||
-         ( ( dst->getField() != eFieldNone) /* for DaVinci Resolve */ && ( dst->getField() != args.fieldToRender) ) ) {
-        setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-        throwSuiteStatusException(kOfxStatFailed);
-    }
+    checkBadRenderScaleOrField(dst, args);
+# endif
     auto_ptr<const Image> src( ( _srcClip && _srcClip->isConnected() ) ?
                                     _srcClip->fetchImage(time) : 0 );
+# ifndef NDEBUG
     if ( src.get() ) {
-        if ( (src->getRenderScale().x != args.renderScale.x) ||
-             ( src->getRenderScale().y != args.renderScale.y) ||
-             ( ( src->getField() != eFieldNone) /* for DaVinci Resolve */ && ( src->getField() != args.fieldToRender) ) ) {
-            setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-            throwSuiteStatusException(kOfxStatFailed);
-        }
+        checkBadRenderScaleOrField(src, args);
         BitDepthEnum srcBitDepth      = src->getPixelDepth();
         PixelComponentEnum srcComponents = src->getPixelComponents();
         if ( (srcBitDepth != dstBitDepth) || (srcComponents != dstComponents) ) {
@@ -1356,10 +1348,11 @@ HueKeyerPlugin::setupAndProcess(HueKeyerProcessorBase &processor,
             throwSuiteStatusException(kOfxStatErrImageFormat);
         }
     }
+# endif
 
     processor.setDstImg( dst.get() );
     processor.setSrcImg( src.get() );
-    processor.setRenderWindow(args.renderWindow);
+    processor.setRenderWindow(args.renderWindow, args.renderScale);
     processor.process();
 } // HueKeyerPlugin::setupAndProcess
 
@@ -1396,8 +1389,8 @@ HueKeyerPlugin::render(const RenderArguments &args)
     BitDepthEnum dstBitDepth    = _dstClip->getPixelDepth();
     PixelComponentEnum dstComponents  = _dstClip->getPixelComponents();
 
-    assert( kSupportsMultipleClipPARs   || !_srcClip || _srcClip->getPixelAspectRatio() == _dstClip->getPixelAspectRatio() );
-    assert( kSupportsMultipleClipDepths || !_srcClip || _srcClip->getPixelDepth()       == _dstClip->getPixelDepth() );
+    assert( kSupportsMultipleClipPARs   || !_srcClip || !_srcClip->isConnected() || _srcClip->getPixelAspectRatio() == _dstClip->getPixelAspectRatio() );
+    assert( kSupportsMultipleClipDepths || !_srcClip || !_srcClip->isConnected() || _srcClip->getPixelDepth()       == _dstClip->getPixelDepth() );
     if (dstComponents == ePixelComponentRGBA) {
         renderForComponents<4>(args, dstBitDepth);
     } else {
@@ -1442,10 +1435,10 @@ void
 HueKeyerPluginFactory::describeInContext(ImageEffectDescriptor &desc,
                                          ContextEnum /*context*/)
 {
-    const ImageEffectHostDescription &gHostDescription = *getImageEffectHostDescription();
-    const bool supportsParametricParameter = ( gHostDescription.supportsParametricParameter &&
-                                               !(gHostDescription.hostName == "uk.co.thefoundry.nuke" &&
-                                                 8 <= gHostDescription.versionMajor && gHostDescription.versionMajor <= 11) );  // Nuke 8-11.1 are known to *not* support Parametric
+    const ImageEffectHostDescription &hostDescription = *getImageEffectHostDescription();
+    const bool supportsParametricParameter = ( hostDescription.supportsParametricParameter &&
+                                               !(hostDescription.hostName == "uk.co.thefoundry.nuke" &&
+                                                 8 <= hostDescription.versionMajor && hostDescription.versionMajor <= 11) );  // Nuke 8-11.1 are known to *not* support Parametric
 
     if (!supportsParametricParameter) {
         throwHostMissingSuiteException(kOfxParametricParameterSuite);

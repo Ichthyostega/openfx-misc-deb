@@ -26,6 +26,9 @@
 #include <cmath>
 
 #ifdef __APPLE__
+#ifndef GL_SILENCE_DEPRECATION
+#define GL_SILENCE_DEPRECATION // Yes, we are still doing OpenGL 2.1
+#endif
 #include <OpenGL/gl.h>
 #else
 #ifdef _WIN32
@@ -76,9 +79,9 @@ OFXS_NAMESPACE_ANONYMOUS_ENTER
 #define kParamResolutionHint \
     "Resolution of the output image, in pixels."
 
-#define kParamRowsColums "rowsColumns"
-#define kParamRowsColumsLabel "Rows/Columns"
-#define kParamRowsColumsHint \
+#define kParamRowsColumns "rowsColumns"
+#define kParamRowsColumnsLabel "Rows/Columns"
+#define kParamRowsColumnsHint \
     "How many rows and columns in the grid where the input images or frames are arranged."
 
 #define kParamAutoDims "autoDims"
@@ -193,7 +196,7 @@ LayerContactSheetPlugin::LayerContactSheetPlugin(OfxImageEffectHandle handle)
     _srcClip = fetchClip(kOfxImageEffectSimpleSourceClipName);
     assert(_srcClip);
     _resolution  = fetchInt2DParam(kParamResolution);
-    _rowsColumns = fetchInt2DParam(kParamRowsColums);
+    _rowsColumns = fetchInt2DParam(kParamRowsColumns);
     assert(_resolution && _rowsColumns);
     _autoDims = fetchBooleanParam(kParamAutoDims);
     _gap = fetchIntParam(kParamGap);
@@ -244,13 +247,7 @@ LayerContactSheetPlugin::render(const OFX::RenderArguments &args)
     if ( !dst.get() ) {
         throwSuiteStatusException(kOfxStatFailed);
     }
-    if ( (dst->getRenderScale().x != args.renderScale.x) ||
-        ( dst->getRenderScale().y != args.renderScale.y) ||
-        ( ( dst->getField() != eFieldNone) /* for DaVinci Resolve */ && ( dst->getField() != args.fieldToRender) ) ) {
-        setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-        throwSuiteStatusException(kOfxStatFailed);
-    }
-    BitDepthEnum dstBitDepth       = dst->getPixelDepth();
+    checkBadRenderScaleOrField(dst, args);
     //PixelComponentEnum dstComponents  = dst->getPixelComponents();
     const OfxRectI& dstBounds = dst->getBounds();
     assert(dst->getPixelDepth() == eBitDepthFloat);
@@ -260,7 +257,7 @@ LayerContactSheetPlugin::render(const OFX::RenderArguments &args)
     const size_t bxstride = dst->getPixelComponentCount();
     const size_t bystride = bwidth * bxstride;
     // clear the renderWindow
-    fillBlack( *this, args.renderWindow, dst.get() );
+    fillBlack( *this, args.renderWindow, args.renderScale, dst.get() );
 
     OfxRectD rod;
     {
@@ -279,8 +276,8 @@ LayerContactSheetPlugin::render(const OFX::RenderArguments &args)
     OfxRectD renderWindowCanonical;
     Coords::toCanonical(args.renderWindow, args.renderScale, dstPar, &renderWindowCanonical);
 
-    assert( kSupportsMultipleClipPARs   || !_srcClip || _srcClip->getPixelAspectRatio() == _dstClip->getPixelAspectRatio() );
-    assert( kSupportsMultipleClipDepths || !_srcClip || _srcClip->getPixelDepth()       == _dstClip->getPixelDepth() );
+    assert( kSupportsMultipleClipPARs   || !_srcClip || !_srcClip->isConnected() || _srcClip->getPixelAspectRatio() == _dstClip->getPixelAspectRatio() );
+    assert( kSupportsMultipleClipDepths || !_srcClip || !_srcClip->isConnected() || _srcClip->getPixelDepth()       == _dstClip->getPixelDepth() );
 
     OfxRectD srcFormatCanonical;
     {
@@ -355,17 +352,15 @@ LayerContactSheetPlugin::render(const OFX::RenderArguments &args)
                 // nothing to do
                 return;
             } else {
-                if ( (src->getRenderScale().x != args.renderScale.x) ||
-                    ( src->getRenderScale().y != args.renderScale.y) ||
-                    ( ( src->getField() != eFieldNone) /* for DaVinci Resolve */ && ( src->getField() != args.fieldToRender) ) ) {
-                    setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-                    throwSuiteStatusException(kOfxStatFailed);
-                }
+#             ifndef NDEBUG
+                checkBadRenderScaleOrField(src, args);
+                BitDepthEnum dstBitDepth       = dst->getPixelDepth();
                 BitDepthEnum srcBitDepth      = src->getPixelDepth();
                 //PixelComponentEnum srcComponents = src->getPixelComponents();
                 if ( (srcBitDepth != dstBitDepth) /*|| (srcComponents != dstComponents)*/ ) {
                     throwSuiteStatusException(kOfxStatErrImageFormat);
                 }
+#             endif
 
                 //- draw it at the right place
                 const OfxRectI& srcBounds = src->getBounds();
@@ -515,7 +510,7 @@ public:
         _dstClip = effect->fetchClip(kOfxImageEffectOutputClipName);
         assert( _dstClip && (!_dstClip->isConnected() || _dstClip->getPixelComponents() == OFX::ePixelComponentAlpha || _dstClip->getPixelComponents() == OFX::ePixelComponentRGB || _dstClip->getPixelComponents() == OFX::ePixelComponentRGBA) );
         _resolution  = effect->fetchInt2DParam(kParamResolution);
-        _rowsColumns = effect->fetchInt2DParam(kParamRowsColums);
+        _rowsColumns = effect->fetchInt2DParam(kParamRowsColumns);
         _autoDims = effect->fetchBooleanParam(kParamAutoDims);
         _gap = effect->fetchIntParam(kParamGap);
         _center = effect->fetchBooleanParam(kParamCenter);
@@ -781,9 +776,9 @@ LayerContactSheetPluginFactory::describeInContext(OFX::ImageEffectDescriptor &de
 
     // rowsColumns
     {
-        Int2DParamDescriptor *param = desc.defineInt2DParam(kParamRowsColums);
-        param->setLabel(kParamRowsColumsLabel);
-        param->setHint(kParamRowsColumsHint);
+        Int2DParamDescriptor *param = desc.defineInt2DParam(kParamRowsColumns);
+        param->setLabel(kParamRowsColumnsLabel);
+        param->setHint(kParamRowsColumnsHint);
         param->setDefault(3, 4);
         param->setRange(1, 1, INT_MAX, INT_MAX);
         param->setDisplayRange(1, 1, 32, 32);
