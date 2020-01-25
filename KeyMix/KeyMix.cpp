@@ -166,8 +166,9 @@ public:
     }
 
 private:
-    void multiThreadProcessImages(OfxRectI procWindow)
+    void multiThreadProcessImages(const OfxRectI& procWindow, const OfxPointD& rs) OVERRIDE FINAL
     {
+        unused(rs);
         float tmpPix[4];
         for (int c = 0; c < 4; ++c) {
             tmpPix[c] = 0;
@@ -245,6 +246,7 @@ public:
         , _srcClipB(NULL)
         , _maskClip(NULL)
     {
+
         _dstClip = fetchClip(kOfxImageEffectOutputClipName);
         assert( _dstClip && (!_dstClip->isConnected() || _dstClip->getPixelComponents() == ePixelComponentRGB || _dstClip->getPixelComponents() == ePixelComponentRGBA || _dstClip->getPixelComponents() == ePixelComponentAlpha) );
         _srcClipA = fetchClip(kClipA);
@@ -349,6 +351,7 @@ KeyMixPlugin::setupAndProcess(KeyMixProcessorBase &processor,
     if ( !dst.get() ) {
         throwSuiteStatusException(kOfxStatFailed);
     }
+# ifndef NDEBUG
     BitDepthEnum dstBitDepth    = dst->getPixelDepth();
     PixelComponentEnum dstComponents  = dst->getPixelComponents();
     if ( ( dstBitDepth != _dstClip->getPixelDepth() ) ||
@@ -356,24 +359,16 @@ KeyMixPlugin::setupAndProcess(KeyMixProcessorBase &processor,
         setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong depth or components");
         throwSuiteStatusException(kOfxStatFailed);
     }
-    if ( (dst->getRenderScale().x != args.renderScale.x) ||
-         ( dst->getRenderScale().y != args.renderScale.y) ||
-         ( ( dst->getField() != eFieldNone) /* for DaVinci Resolve */ && ( dst->getField() != args.fieldToRender) ) ) {
-        setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-        throwSuiteStatusException(kOfxStatFailed);
-    }
+    checkBadRenderScaleOrField(dst, args);
+# endif
     auto_ptr<const Image> srcA( ( _srcClipA && _srcClipA->isConnected() ) ?
                                      _srcClipA->fetchImage(time) : 0 );
     auto_ptr<const Image> srcB( ( _srcClipB && _srcClipB->isConnected() ) ?
                                      _srcClipB->fetchImage(time) : 0 );
 
+# ifndef NDEBUG
     if ( srcA.get() ) {
-        if ( (srcA->getRenderScale().x != args.renderScale.x) ||
-             ( srcA->getRenderScale().y != args.renderScale.y) ||
-             ( ( srcA->getField() != eFieldNone) /* for DaVinci Resolve */ && ( srcA->getField() != args.fieldToRender) ) ) {
-            setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-            throwSuiteStatusException(kOfxStatFailed);
-        }
+        checkBadRenderScaleOrField(srcA, args);
         BitDepthEnum srcBitDepth      = srcA->getPixelDepth();
         PixelComponentEnum srcComponents = srcA->getPixelComponents();
         if ( (srcBitDepth != dstBitDepth) || (srcComponents != dstComponents) ) {
@@ -382,18 +377,14 @@ KeyMixPlugin::setupAndProcess(KeyMixProcessorBase &processor,
     }
 
     if ( srcB.get() ) {
-        if ( (srcB->getRenderScale().x != args.renderScale.x) ||
-             ( srcB->getRenderScale().y != args.renderScale.y) ||
-             ( ( srcB->getField() != eFieldNone) /* for DaVinci Resolve */ && ( srcB->getField() != args.fieldToRender) ) ) {
-            setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-            throwSuiteStatusException(kOfxStatFailed);
-        }
+        checkBadRenderScaleOrField(srcB, args);
         BitDepthEnum srcBitDepth      = srcB->getPixelDepth();
         PixelComponentEnum srcComponents = srcB->getPixelComponents();
         if ( (srcBitDepth != dstBitDepth) || (srcComponents != dstComponents) ) {
             throwSuiteStatusException(kOfxStatErrImageFormat);
         }
     }
+# endif
 
     // auto ptr for the mask.
     bool doMasking = ( ( !_maskApply || _maskApply->getValueAtTime(time) ) && _maskClip && _maskClip->isConnected() );
@@ -416,7 +407,7 @@ KeyMixPlugin::setupAndProcess(KeyMixProcessorBase &processor,
     processor.setValues(mix, aChannels);
     processor.setDstImg( dst.get() );
     processor.setSrcImg( srcA.get(), srcB.get() );
-    processor.setRenderWindow(args.renderWindow);
+    processor.setRenderWindow(args.renderWindow, args.renderScale);
 
     processor.process();
 } // KeyMixPlugin::setupAndProcess

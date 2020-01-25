@@ -1,20 +1,32 @@
-Source: openfx-misc-natron-dmo
+Source: openfx-misc-natron
 Section: video
 Priority: optional
-Maintainer: Christian Marillat <marillat@deb-multimedia.org>
-Uploaders: Hermann Vosseler <deb@ichthyostega.de>
-Bugs: mailto:marillat@deb-multimedia.org
+Maintainer: Hermann Vosseler <deb@ichthyostega.de>
+Vcs-Git: https://github.com/Ichthyostega/openfx-misc-deb.git -b deb
 Homepage: https://github.com/NatronGitHub/openfx-misc
-Standards-Version: 4.1.5
-Build-Depends: debhelper (>= 10~),
-	libgl1-mesa-dev,
-	pkg-config
+Standards-Version: 4.5.0
+Build-Depends: debhelper (>= 11),
+	pkg-config,
+	libgl1-mesa-dev
 
 Package: openfx-misc-natron
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}
-Description: Miscellaneous OFX / OpenFX / Open Effects plugins
- These plugins were primarily developed for Natron, but may be used with
- other OpenFX hosts.
+Description: Miscellaneous OFX / OpenFX plugins for Natron.
+ This selection of standard compositing, grading and image manipulation
+ plugins were primarily developed for Natron, but may be used with other
+ OpenFX hosts as well.
  .
- See https://github.com/devernay/openfx-misc for a complete list of plugins.
+ * Image: color bars and test images
+ * Draw: generate noise, ramps and shapes
+ * Time: interlace, frame hold, average, retiming, buffer
+ * Channel: rearrange channels and convet bit depth
+ * Color: adjust, equalize, gamma, colorspace, colormodel
+ * Filter: blur, erode, sharpen, smooth, denoise, edge detect, mask fill
+ * Keyer: chroma key, difference key, spill correct, matte monitor
+ * Merge: masked copy, average, merge, multiply, dissolve, switch
+ * Transform: transform, fit, perspective, displace, lens distort, point track
+ * Stereo Views: (Sony Vegas compatible) stereoscopic 3D, anaglyph, side-by-side
+ .
+ See https://github.com/NatronGitHub/openfx-misc for a complete list of plugins.
+

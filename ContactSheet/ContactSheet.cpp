@@ -26,6 +26,9 @@
 #include <cmath>
 
 #ifdef __APPLE__
+#ifndef GL_SILENCE_DEPRECATION
+#define GL_SILENCE_DEPRECATION // Yes, we are still doing OpenGL 2.1
+#endif
 #include <OpenGL/gl.h>
 #else
 #ifdef _WIN32
@@ -77,9 +80,9 @@ OFXS_NAMESPACE_ANONYMOUS_ENTER
 #define kParamResolutionHint \
     "Resolution of the output image, in pixels."
 
-#define kParamRowsColums "rowsColumns"
-#define kParamRowsColumsLabel "Rows/Columns"
-#define kParamRowsColumsHint \
+#define kParamRowsColumns "rowsColumns"
+#define kParamRowsColumnsLabel "Rows/Columns"
+#define kParamRowsColumnsHint \
     "How many rows and columns in the grid where the input images or frames are arranged."
 
 #define kParamGap "gap"
@@ -208,7 +211,6 @@ private:
     BooleanParam* _selection;
     IntParam* _selectionInput;
     IntParam* _selectionFrame;
-
 };
 
 ContactSheetPlugin::ContactSheetPlugin(OfxImageEffectHandle handle,
@@ -239,7 +241,7 @@ ContactSheetPlugin::ContactSheetPlugin(OfxImageEffectHandle handle,
         assert(_srcClip[i]);
     }
     _resolution  = fetchInt2DParam(kParamResolution);
-    _rowsColumns = fetchInt2DParam(kParamRowsColums);
+    _rowsColumns = fetchInt2DParam(kParamRowsColumns);
     assert(_resolution && _rowsColumns);
     _gap = fetchIntParam(kParamGap);
     _center = fetchBooleanParam(kParamCenter);
@@ -301,14 +303,7 @@ ContactSheetPlugin::render(const OFX::RenderArguments &args)
     if ( !dst.get() ) {
         throwSuiteStatusException(kOfxStatFailed);
     }
-    if ( (dst->getRenderScale().x != args.renderScale.x) ||
-        ( dst->getRenderScale().y != args.renderScale.y) ||
-        ( ( dst->getField() != eFieldNone) /* for DaVinci Resolve */ && ( dst->getField() != args.fieldToRender) ) ) {
-        setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-        throwSuiteStatusException(kOfxStatFailed);
-    }
-    BitDepthEnum dstBitDepth       = dst->getPixelDepth();
-    //PixelComponentEnum dstComponents  = dst->getPixelComponents();
+    checkBadRenderScaleOrField(dst, args);
     const OfxRectI& dstBounds = dst->getBounds();
     assert(dst->getPixelDepth() == eBitDepthFloat);
     float* b = (float*)dst->getPixelData();
@@ -317,7 +312,7 @@ ContactSheetPlugin::render(const OFX::RenderArguments &args)
     const size_t bxstride = dst->getPixelComponentCount();
     const size_t bystride = bwidth * bxstride;
     // clear the renderWindow
-    fillBlack( *this, args.renderWindow, dst.get() );
+    fillBlack( *this, args.renderWindow, args.renderScale, dst.get() );
 
     int first, last;
     _frameRange->getValueAtTime(time, first, last);
@@ -404,18 +399,16 @@ ContactSheetPlugin::render(const OFX::RenderArguments &args)
                 auto_ptr<const Image> src( ( srcClip && srcClip->isConnected() ) ?
                                                srcClip->fetchImage(srcTime) : 0 );
                 if ( src.get() ) {
-                    if ( (src->getRenderScale().x != args.renderScale.x) ||
-                        ( src->getRenderScale().y != args.renderScale.y) ||
-                        ( ( src->getField() != eFieldNone) /* for DaVinci Resolve */ && ( src->getField() != args.fieldToRender) ) ) {
-                        setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-                        throwSuiteStatusException(kOfxStatFailed);
-                    }
+#                 ifndef NDEBUG
+                    checkBadRenderScaleOrField(src, args);
+                    BitDepthEnum dstBitDepth       = dst->getPixelDepth();
+                    //PixelComponentEnum dstComponents  = dst->getPixelComponents();
                     BitDepthEnum srcBitDepth      = src->getPixelDepth();
                     //PixelComponentEnum srcComponents = src->getPixelComponents();
                     if ( (srcBitDepth != dstBitDepth) /*|| (srcComponents != dstComponents)*/ ) {
                         throwSuiteStatusException(kOfxStatErrImageFormat);
                     }
-
+#                 endif
                     //- draw it at the right place
                     const OfxRectI& srcBounds = src->getBounds();
                     assert(src->getPixelDepth() == eBitDepthFloat);
@@ -684,7 +677,7 @@ public:
         _dstClip = effect->fetchClip(kOfxImageEffectOutputClipName);
         assert( _dstClip && (!_dstClip->isConnected() || _dstClip->getPixelComponents() == OFX::ePixelComponentRGBA) );
         _resolution  = effect->fetchInt2DParam(kParamResolution);
-        _rowsColumns = effect->fetchInt2DParam(kParamRowsColums);
+        _rowsColumns = effect->fetchInt2DParam(kParamRowsColumns);
         assert(_resolution && _rowsColumns);
         _gap = effect->fetchIntParam(kParamGap);
         _center = effect->fetchBooleanParam(kParamCenter);
@@ -1014,9 +1007,9 @@ ContactSheetPluginFactory::describeInContext(OFX::ImageEffectDescriptor &desc,
 
     // rowsColumns
     {
-        Int2DParamDescriptor *param = desc.defineInt2DParam(kParamRowsColums);
-        param->setLabel(kParamRowsColumsLabel);
-        param->setHint(kParamRowsColumsHint);
+        Int2DParamDescriptor *param = desc.defineInt2DParam(kParamRowsColumns);
+        param->setLabel(kParamRowsColumnsLabel);
+        param->setHint(kParamRowsColumnsHint);
         param->setDefault(3, 4);
         param->setRange(1, 1, INT_MAX, INT_MAX);
         param->setDisplayRange(1, 1, 32, 32);

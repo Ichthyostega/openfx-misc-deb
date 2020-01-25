@@ -184,7 +184,7 @@ public:
 
 private:
 
-    void multiThreadProcessImages(OfxRectI procWindow)
+    void multiThreadProcessImages(const OfxRectI& procWindow, const OfxPointD& rs) OVERRIDE FINAL
     {
 #     ifndef __COVERITY__ // too many coverity[dead_error_line] errors
         const bool r = _processR && (nComponents != 1);
@@ -195,29 +195,29 @@ private:
             if (g) {
                 if (b) {
                     if (a) {
-                        return process<true, true, true, true >(procWindow); // RGBA
+                        return process<true, true, true, true >(procWindow, rs); // RGBA
                     } else {
-                        return process<true, true, true, false>(procWindow); // RGBa
+                        return process<true, true, true, false>(procWindow, rs); // RGBa
                     }
                 } else {
                     if (a) {
-                        return process<true, true, false, true >(procWindow); // RGbA
+                        return process<true, true, false, true >(procWindow, rs); // RGbA
                     } else {
-                        return process<true, true, false, false>(procWindow); // RGba
+                        return process<true, true, false, false>(procWindow, rs); // RGba
                     }
                 }
             } else {
                 if (b) {
                     if (a) {
-                        return process<true, false, true, true >(procWindow); // RgBA
+                        return process<true, false, true, true >(procWindow, rs); // RgBA
                     } else {
-                        return process<true, false, true, false>(procWindow); // RgBa
+                        return process<true, false, true, false>(procWindow, rs); // RgBa
                     }
                 } else {
                     if (a) {
-                        return process<true, false, false, true >(procWindow); // RgbA
+                        return process<true, false, false, true >(procWindow, rs); // RgbA
                     } else {
-                        return process<true, false, false, false>(procWindow); // Rgba
+                        return process<true, false, false, false>(procWindow, rs); // Rgba
                     }
                 }
             }
@@ -225,29 +225,29 @@ private:
             if (g) {
                 if (b) {
                     if (a) {
-                        return process<false, true, true, true >(procWindow); // rGBA
+                        return process<false, true, true, true >(procWindow, rs); // rGBA
                     } else {
-                        return process<false, true, true, false>(procWindow); // rGBa
+                        return process<false, true, true, false>(procWindow, rs); // rGBa
                     }
                 } else {
                     if (a) {
-                        return process<false, true, false, true >(procWindow); // rGbA
+                        return process<false, true, false, true >(procWindow, rs); // rGbA
                     } else {
-                        return process<false, true, false, false>(procWindow); // rGba
+                        return process<false, true, false, false>(procWindow, rs); // rGba
                     }
                 }
             } else {
                 if (b) {
                     if (a) {
-                        return process<false, false, true, true >(procWindow); // rgBA
+                        return process<false, false, true, true >(procWindow, rs); // rgBA
                     } else {
-                        return process<false, false, true, false>(procWindow); // rgBa
+                        return process<false, false, true, false>(procWindow, rs); // rgBa
                     }
                 } else {
                     if (a) {
-                        return process<false, false, false, true >(procWindow); // rgbA
+                        return process<false, false, false, true >(procWindow, rs); // rgbA
                     } else {
-                        return process<false, false, false, false>(procWindow); // rgba
+                        return process<false, false, false, false>(procWindow, rs); // rgba
                     }
                 }
             }
@@ -256,8 +256,9 @@ private:
     } // multiThreadProcessImages
 
     template<bool processR, bool processG, bool processB, bool processA>
-    void process(const OfxRectI& procWindow)
+    void process(const OfxRectI& procWindow, const OfxPointD& rs)
     {
+        unused(rs);
         assert(nComponents == 1 || nComponents == 3 || nComponents == 4);
         assert(_dstImg);
         float unpPix[4];
@@ -337,6 +338,7 @@ public:
         , _maskInvert(NULL)
         , _premultChanged(NULL)
     {
+
         _dstClip = fetchClip(kOfxImageEffectOutputClipName);
         assert( _dstClip && (!_dstClip->isConnected() || OFX_COMPONENTS_OK(_dstClip->getPixelComponents())) );
         _srcClip = getContext() == eContextGenerator ? NULL : fetchClip(kOfxImageEffectSimpleSourceClipName);
@@ -410,6 +412,7 @@ MultiplyPlugin::setupAndProcess(MultiplyProcessorBase &processor,
     if ( !dst.get() ) {
         throwSuiteStatusException(kOfxStatFailed);
     }
+# ifndef NDEBUG
     BitDepthEnum dstBitDepth    = dst->getPixelDepth();
     PixelComponentEnum dstComponents  = dst->getPixelComponents();
     if ( ( dstBitDepth != _dstClip->getPixelDepth() ) ||
@@ -417,38 +420,26 @@ MultiplyPlugin::setupAndProcess(MultiplyProcessorBase &processor,
         setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong depth or components");
         throwSuiteStatusException(kOfxStatFailed);
     }
-    if ( (dst->getRenderScale().x != args.renderScale.x) ||
-         ( dst->getRenderScale().y != args.renderScale.y) ||
-         ( ( dst->getField() != eFieldNone) /* for DaVinci Resolve */ && ( dst->getField() != args.fieldToRender) ) ) {
-        setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-        throwSuiteStatusException(kOfxStatFailed);
-    }
+    checkBadRenderScaleOrField(dst, args);
+# endif
     auto_ptr<const Image> src( ( _srcClip && _srcClip->isConnected() ) ?
                                     _srcClip->fetchImage(args.time) : 0 );
+# ifndef NDEBUG
     if ( src.get() ) {
-        if ( (src->getRenderScale().x != args.renderScale.x) ||
-             ( src->getRenderScale().y != args.renderScale.y) ||
-             ( ( src->getField() != eFieldNone) /* for DaVinci Resolve */ && ( src->getField() != args.fieldToRender) ) ) {
-            setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-            throwSuiteStatusException(kOfxStatFailed);
-        }
+        checkBadRenderScaleOrField(src, args);
         BitDepthEnum srcBitDepth      = src->getPixelDepth();
         PixelComponentEnum srcComponents = src->getPixelComponents();
         if ( (srcBitDepth != dstBitDepth) || (srcComponents != dstComponents) ) {
             throwSuiteStatusException(kOfxStatErrImageFormat);
         }
     }
+# endif
     bool doMasking = ( ( !_maskApply || _maskApply->getValueAtTime(args.time) ) && _maskClip && _maskClip->isConnected() );
     auto_ptr<const Image> mask(doMasking ? _maskClip->fetchImage(args.time) : 0);
     // do we do masking
     if (doMasking) {
         if ( mask.get() ) {
-            if ( (mask->getRenderScale().x != args.renderScale.x) ||
-                 ( mask->getRenderScale().y != args.renderScale.y) ||
-                 ( ( mask->getField() != eFieldNone) /* for DaVinci Resolve */ && ( mask->getField() != args.fieldToRender) ) ) {
-                setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-                throwSuiteStatusException(kOfxStatFailed);
-            }
+            checkBadRenderScaleOrField(mask, args);
         }
         bool maskInvert;
         _maskInvert->getValueAtTime(args.time, maskInvert);
@@ -460,7 +451,7 @@ MultiplyPlugin::setupAndProcess(MultiplyProcessorBase &processor,
     processor.setDstImg( dst.get() );
     processor.setSrcImg( src.get() );
     // set the render window
-    processor.setRenderWindow(args.renderWindow);
+    processor.setRenderWindow(args.renderWindow, args.renderScale);
 
     bool processR, processG, processB, processA;
     _processR->getValueAtTime(args.time, processR);
@@ -490,8 +481,8 @@ MultiplyPlugin::render(const RenderArguments &args)
     BitDepthEnum dstBitDepth    = _dstClip->getPixelDepth();
     PixelComponentEnum dstComponents  = _dstClip->getPixelComponents();
 
-    assert( kSupportsMultipleClipPARs   || !_srcClip || _srcClip->getPixelAspectRatio() == _dstClip->getPixelAspectRatio() );
-    assert( kSupportsMultipleClipDepths || !_srcClip || _srcClip->getPixelDepth()       == _dstClip->getPixelDepth() );
+    assert( kSupportsMultipleClipPARs   || !_srcClip || !_srcClip->isConnected() || _srcClip->getPixelAspectRatio() == _dstClip->getPixelAspectRatio() );
+    assert( kSupportsMultipleClipDepths || !_srcClip || !_srcClip->isConnected() || _srcClip->getPixelDepth()       == _dstClip->getPixelDepth() );
     assert(OFX_COMPONENTS_OK(dstComponents));
     if (dstComponents == ePixelComponentRGBA) {
         switch (dstBitDepth) {

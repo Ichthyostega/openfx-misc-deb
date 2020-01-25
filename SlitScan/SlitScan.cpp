@@ -219,7 +219,7 @@ class SlitScanProcessorBase;
 class SlitScanPlugin
     : public ImageEffect
 {
-protected:
+private:
     // do not need to delete these, the ImageEffect is managing them for us
     Clip *_dstClip;            /**< @brief Mandated output clips */
     Clip *_srcClip;            /**< @brief Mandated input clips */
@@ -245,6 +245,7 @@ public:
         , _frameRange(NULL)
         , _filter(NULL)
     {
+
         _dstClip = fetchClip(kOfxImageEffectOutputClipName);
         _srcClip = fetchClip(kOfxImageEffectSimpleSourceClipName);
         _retimeMapClip = fetchClip(kClipRetimeMap);
@@ -578,8 +579,9 @@ public:
     }
 
     // and do some processing
-    void multiThreadProcessImages(OfxRectI procWindow)
+    void multiThreadProcessImages(const OfxRectI& procWindow, const OfxPointD& rs) OVERRIDE FINAL
     {
+        unused(rs);
         for (int y = procWindow.y1; y < procWindow.y2; y++) {
             if ( _effect.abort() ) {break;}
 
@@ -661,6 +663,7 @@ SlitScanPlugin::setupAndProcess(SlitScanProcessorBase &processor,
     if ( !dst.get() ) {
         throwSuiteStatusException(kOfxStatFailed);
     }
+# ifndef NDEBUG
     BitDepthEnum dstBitDepth    = dst->getPixelDepth();
     PixelComponentEnum dstComponents  = dst->getPixelComponents();
     if ( ( dstBitDepth != _dstClip->getPixelDepth() ) ||
@@ -668,12 +671,8 @@ SlitScanPlugin::setupAndProcess(SlitScanProcessorBase &processor,
         setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong depth or components");
         throwSuiteStatusException(kOfxStatFailed);
     }
-    if ( (dst->getRenderScale().x != args.renderScale.x) ||
-         ( dst->getRenderScale().y != args.renderScale.y) ||
-         ( ( dst->getField() != eFieldNone) /* for DaVinci Resolve */ && ( dst->getField() != args.fieldToRender) ) ) {
-        setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-        throwSuiteStatusException(kOfxStatFailed);
-    }
+    checkBadRenderScaleOrField(dst, args);
+# endif
 
     double retimeGain = _retimeGain->getValueAtTime(time);
     RetimeFunctionEnum retimeFunction = (RetimeFunctionEnum)_retimeFunction->getValueAtTime(time);
@@ -697,20 +696,17 @@ SlitScanPlugin::setupAndProcess(SlitScanProcessorBase &processor,
             // should have been caught by isIdentity...
             auto_ptr<const Image> src( ( _srcClip && _srcClip->isConnected() ) ?
                                             _srcClip->fetchImage(identityTime) : 0 );
-            if ( src.get() ) {
-                if ( (src->getRenderScale().x != args.renderScale.x) ||
-                     ( src->getRenderScale().y != args.renderScale.y) ||
-                     ( ( src->getField() != eFieldNone) /* for DaVinci Resolve */ && ( src->getField() != args.fieldToRender) ) ) {
-                    setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-                    throwSuiteStatusException(kOfxStatFailed);
-                }
+#        ifndef NDEBUG
+           if ( src.get() ) {
+                checkBadRenderScaleOrField(src, args);
                 BitDepthEnum srcBitDepth      = src->getPixelDepth();
                 PixelComponentEnum srcComponents = src->getPixelComponents();
                 if ( (srcBitDepth != dstBitDepth) || (srcComponents != dstComponents) ) {
                     throwSuiteStatusException(kOfxStatErrImageFormat);
                 }
             }
-            copyPixels( *this, args.renderWindow, src.get(), dst.get() );
+#         endif
+            copyPixels( *this, args.renderWindow, args.renderScale, src.get(), dst.get() );
 
             return;
         }
@@ -820,7 +816,7 @@ SlitScanPlugin::setupAndProcess(SlitScanProcessorBase &processor,
         return;
     }
     // set the render window
-    processor.setRenderWindow(args.renderWindow);
+    processor.setRenderWindow(args.renderWindow, args.renderScale);
 
     // set the blend between
     processor.setSourceImages(&sourceImages);
@@ -866,8 +862,8 @@ SlitScanPlugin::render(const RenderArguments &args)
     // instantiate the render code based on the pixel depth of the dst clip
     PixelComponentEnum dstComponents  = _dstClip->getPixelComponents();
 
-    assert( kSupportsMultipleClipPARs   || !_srcClip || _srcClip->getPixelAspectRatio() == _dstClip->getPixelAspectRatio() );
-    assert( kSupportsMultipleClipDepths || !_srcClip || _srcClip->getPixelDepth()       == _dstClip->getPixelDepth() );
+    assert( kSupportsMultipleClipPARs   || !_srcClip || !_srcClip->isConnected() || _srcClip->getPixelAspectRatio() == _dstClip->getPixelAspectRatio() );
+    assert( kSupportsMultipleClipDepths || !_srcClip || !_srcClip->isConnected() || _srcClip->getPixelDepth()       == _dstClip->getPixelDepth() );
 
     // do the rendering
     if (dstComponents == ePixelComponentRGBA) {

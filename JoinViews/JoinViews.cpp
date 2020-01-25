@@ -62,6 +62,7 @@ public:
         , _srcLeftClip(NULL)
         , _srcRightClip(NULL)
     {
+
         _dstClip = fetchClip(kOfxImageEffectOutputClipName);
         assert( _dstClip && (!_dstClip->isConnected() || _dstClip->getPixelComponents() == ePixelComponentAlpha || _dstClip->getPixelComponents() == ePixelComponentRGB || _dstClip->getPixelComponents() == ePixelComponentRGBA) );
         _srcLeftClip = fetchClip(kClipLeft);
@@ -177,6 +178,7 @@ JoinViewsPlugin::setupAndProcess(PixelProcessorFilterBase &processor,
     if ( !dst.get() ) {
         throwSuiteStatusException(kOfxStatFailed);
     }
+# ifndef NDEBUG
     BitDepthEnum dstBitDepth    = dst->getPixelDepth();
     PixelComponentEnum dstComponents  = dst->getPixelComponents();
     if ( ( dstBitDepth != _dstClip->getPixelDepth() ) ||
@@ -184,12 +186,8 @@ JoinViewsPlugin::setupAndProcess(PixelProcessorFilterBase &processor,
         setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong depth or components");
         throwSuiteStatusException(kOfxStatFailed);
     }
-    if ( (dst->getRenderScale().x != args.renderScale.x) ||
-         ( dst->getRenderScale().y != args.renderScale.y) ||
-         ( ( dst->getField() != eFieldNone) /* for DaVinci Resolve */ && ( dst->getField() != args.fieldToRender) ) ) {
-        setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-        throwSuiteStatusException(kOfxStatFailed);
-    }
+    checkBadRenderScaleOrField(dst, args);
+# endif
 
     // fetch main input image
     auto_ptr<const Image> src( args.renderView == 0 ?
@@ -199,19 +197,13 @@ JoinViewsPlugin::setupAndProcess(PixelProcessorFilterBase &processor,
                                       _srcRightClip->fetchStereoscopicImage(args.time, 0) : 0 ) );
 
     if ( !src.get() ) {
-        if ( !abort() ) {
-            throwSuiteStatusException(kOfxStatFailed);
-        } else {
-            return;
-        }
+        assert(false);
+        throwSuiteStatusException(kOfxStatFailed);
+        return;
     } else {
-        // make sure bit depths are sane
-        if ( (src->getRenderScale().x != args.renderScale.x) ||
-             ( src->getRenderScale().y != args.renderScale.y) ||
-             ( ( src->getField() != eFieldNone) /* for DaVinci Resolve */ && ( src->getField() != args.fieldToRender) ) ) {
-            setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-            throwSuiteStatusException(kOfxStatFailed);
-        }
+# ifndef NDEBUG
+       // make sure bit depths are sane
+        checkBadRenderScaleOrField(src, args);
         BitDepthEnum srcBitDepth      = src->getPixelDepth();
         PixelComponentEnum srcComponents = src->getPixelComponents();
 
@@ -219,6 +211,7 @@ JoinViewsPlugin::setupAndProcess(PixelProcessorFilterBase &processor,
         if ( (srcBitDepth != dstBitDepth) || (srcComponents != dstComponents) ) {
             throwSuiteStatusException(kOfxStatErrImageFormat);
         }
+# endif
     }
 
     // set the images
@@ -226,7 +219,7 @@ JoinViewsPlugin::setupAndProcess(PixelProcessorFilterBase &processor,
     processor.setSrcImg( src.get() );
 
     // set the render window
-    processor.setRenderWindow(args.renderWindow);
+    processor.setRenderWindow(args.renderWindow, args.renderScale);
 
     // Call the base class process member, this will call the derived templated process code
     processor.process();

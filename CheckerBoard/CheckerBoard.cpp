@@ -251,8 +251,9 @@ private:
     }
 
     // and do some processing
-    void multiThreadProcessImages(OfxRectI procWindow)
+    void multiThreadProcessImages(const OfxRectI& procWindow, const OfxPointD& rs) OVERRIDE FINAL
     {
+        unused(rs);
         PIX color0[nComponents];
         PIX color1[nComponents];
         PIX color2[nComponents];
@@ -358,6 +359,7 @@ public:
         , _centerlineColor(NULL)
         , _centerlineWidth(NULL)
     {
+
         _boxSize = fetchDouble2DParam(kParamBoxSize);
         _color0 = fetchRGBAParam(kParamColor0);
         _color1 = fetchRGBAParam(kParamColor1);
@@ -415,6 +417,7 @@ CheckerBoardPlugin::setupAndProcess(CheckerBoardProcessorBase &processor,
     if ( !dst.get() ) {
         throwSuiteStatusException(kOfxStatFailed);
     }
+# ifndef NDEBUG
     BitDepthEnum dstBitDepth    = dst->getPixelDepth();
     PixelComponentEnum dstComponents  = dst->getPixelComponents();
     if ( ( dstBitDepth != _dstClip->getPixelDepth() ) ||
@@ -422,18 +425,14 @@ CheckerBoardPlugin::setupAndProcess(CheckerBoardProcessorBase &processor,
         setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong depth or components");
         throwSuiteStatusException(kOfxStatFailed);
     }
-    if ( (dst->getRenderScale().x != args.renderScale.x) ||
-         ( dst->getRenderScale().y != args.renderScale.y) ||
-         ( ( dst->getField() != eFieldNone) /* for DaVinci Resolve */ && ( dst->getField() != args.fieldToRender) ) ) {
-        setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-        throwSuiteStatusException(kOfxStatFailed);
-    }
-
+    checkBadRenderScaleOrField(dst, args);
+# endif
+    
     // set the images
     processor.setDstImg( dst.get() );
 
     // set the render window
-    processor.setRenderWindow(args.renderWindow);
+    processor.setRenderWindow(args.renderWindow, args.renderScale);
 
     OfxPointD boxSize;
     _boxSize->getValueAtTime(time, boxSize.x, boxSize.y);

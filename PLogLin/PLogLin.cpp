@@ -262,7 +262,7 @@ public:
         // TODO: any pre-computation goes here (such as computing a LUT)
     }
 
-    void multiThreadProcessImages(OfxRectI procWindow)
+    void multiThreadProcessImages(const OfxRectI& procWindow, const OfxPointD& rs) OVERRIDE FINAL
     {
 #     ifndef __COVERITY__ // too many coverity[dead_error_line] errors
         const bool r = _processR && (nComponents != 1);
@@ -271,29 +271,29 @@ public:
         if (r) {
             if (g) {
                 if (b) {
-                    return process<true, true, true>(procWindow);     // RGBa
+                    return process<true, true, true>(procWindow, rs);     // RGBa
                 } else {
-                    return process<true, true, false>(procWindow);     // RGba
+                    return process<true, true, false>(procWindow, rs);     // RGba
                 }
             } else {
                 if (b) {
-                    return process<true, false, true>(procWindow);     // RgBa
+                    return process<true, false, true>(procWindow, rs);     // RgBa
                 } else {
-                    return process<true, false, false>(procWindow);     // Rgba
+                    return process<true, false, false>(procWindow, rs);     // Rgba
                 }
             }
         } else {
             if (g) {
                 if (b) {
-                    return process<false, true, true>(procWindow);     // rGBa
+                    return process<false, true, true>(procWindow, rs);     // rGBa
                 } else {
-                    return process<false, true, false>(procWindow);     // rGba
+                    return process<false, true, false>(procWindow, rs);     // rGba
                 }
             } else {
                 if (b) {
-                    return process<false, false, true>(procWindow);     // rgBa
+                    return process<false, false, true>(procWindow, rs);     // rgBa
                 } else {
-                    return process<false, false, false>(procWindow);     // rgba
+                    return process<false, false, false>(procWindow, rs);     // rgba
                 }
             }
         }
@@ -303,8 +303,9 @@ public:
 private:
 
     template<bool processR, bool processG, bool processB>
-    void process(OfxRectI procWindow)
+    void process(const OfxRectI& procWindow, const OfxPointD& rs)
     {
+        unused(rs);
         assert( (!processR && !processG && !processB) || (nComponents == 3 || nComponents == 4) );
         assert(nComponents == 3 || nComponents == 4);
         float unpPix[4];
@@ -359,7 +360,7 @@ public:
         // TODO: any pre-computation goes here (such as computing a LUT)
     }
 
-    void multiThreadProcessImages(OfxRectI procWindow)
+    void multiThreadProcessImages(const OfxRectI& procWindow, const OfxPointD& rs) OVERRIDE FINAL
     {
 #     ifndef __COVERITY__ // too many coverity[dead_error_line] errors
         const bool r = _processR && (nComponents != 1);
@@ -368,29 +369,29 @@ public:
         if (r) {
             if (g) {
                 if (b) {
-                    return process<true, true, true>(procWindow);     // RGBa
+                    return process<true, true, true>(procWindow, rs);     // RGBa
                 } else {
-                    return process<true, true, false>(procWindow);     // RGba
+                    return process<true, true, false>(procWindow, rs);     // RGba
                 }
             } else {
                 if (b) {
-                    return process<true, false, true>(procWindow);     // RgBa
+                    return process<true, false, true>(procWindow, rs);     // RgBa
                 } else {
-                    return process<true, false, false>(procWindow);     // Rgba
+                    return process<true, false, false>(procWindow, rs);     // Rgba
                 }
             }
         } else {
             if (g) {
                 if (b) {
-                    return process<false, true, true>(procWindow);     // rGBa
+                    return process<false, true, true>(procWindow, rs);     // rGBa
                 } else {
-                    return process<false, true, false>(procWindow);     // rGba
+                    return process<false, true, false>(procWindow, rs);     // rGba
                 }
             } else {
                 if (b) {
-                    return process<false, false, true>(procWindow);     // rgBa
+                    return process<false, false, true>(procWindow, rs);     // rgBa
                 } else {
-                    return process<false, false, false>(procWindow);     // rgba
+                    return process<false, false, false>(procWindow, rs);     // rgba
                 }
             }
         }
@@ -400,8 +401,9 @@ public:
 private:
 
     template<bool processR, bool processG, bool processB>
-    void process(OfxRectI procWindow)
+    void process(const OfxRectI& procWindow, const OfxPointD& rs)
     {
+        unused(rs);
         assert( (!processR && !processG && !processB) || (nComponents == 3 || nComponents == 4) );
         assert(nComponents == 3 || nComponents == 4);
         float unpPix[4];
@@ -469,6 +471,7 @@ public:
         , _maskApply(NULL)
         , _maskInvert(NULL)
     {
+
         _dstClip = fetchClip(kOfxImageEffectOutputClipName);
         assert( _dstClip && (_dstClip->getPixelComponents() == ePixelComponentRGB ||
                              _dstClip->getPixelComponents() == ePixelComponentRGBA) );
@@ -559,6 +562,7 @@ PLogLinPlugin::setupAndProcess(PLogLinProcessorBase &processor,
     if ( !dst.get() ) {
         throwSuiteStatusException(kOfxStatFailed);
     }
+# ifndef NDEBUG
     BitDepthEnum dstBitDepth    = dst->getPixelDepth();
     PixelComponentEnum dstComponents  = dst->getPixelComponents();
     if ( ( dstBitDepth != _dstClip->getPixelDepth() ) ||
@@ -566,36 +570,24 @@ PLogLinPlugin::setupAndProcess(PLogLinProcessorBase &processor,
         setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong depth or components");
         throwSuiteStatusException(kOfxStatFailed);
     }
-    if ( (dst->getRenderScale().x != args.renderScale.x) ||
-         ( dst->getRenderScale().y != args.renderScale.y) ||
-         ( ( dst->getField() != eFieldNone) /* for DaVinci Resolve */ && ( dst->getField() != args.fieldToRender) ) ) {
-        setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-        throwSuiteStatusException(kOfxStatFailed);
-    }
+    checkBadRenderScaleOrField(dst, args);
+# endif
     auto_ptr<const Image> src( ( _srcClip && _srcClip->isConnected() ) ?
                                     _srcClip->fetchImage(time) : 0 );
+# ifndef NDEBUG
     if ( src.get() ) {
-        if ( (src->getRenderScale().x != args.renderScale.x) ||
-             ( src->getRenderScale().y != args.renderScale.y) ||
-             ( ( src->getField() != eFieldNone) /* for DaVinci Resolve */ && ( src->getField() != args.fieldToRender) ) ) {
-            setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-            throwSuiteStatusException(kOfxStatFailed);
-        }
+        checkBadRenderScaleOrField(src, args);
         BitDepthEnum srcBitDepth      = src->getPixelDepth();
         PixelComponentEnum srcComponents = src->getPixelComponents();
         if ( (srcBitDepth != dstBitDepth) || (srcComponents != dstComponents) ) {
             throwSuiteStatusException(kOfxStatErrImageFormat);
         }
     }
+# endif
     bool doMasking = ( ( !_maskApply || _maskApply->getValueAtTime(time) ) && _maskClip && _maskClip->isConnected() );
     auto_ptr<const Image> mask(doMasking ? _maskClip->fetchImage(time) : 0);
     if ( mask.get() ) {
-        if ( (mask->getRenderScale().x != args.renderScale.x) ||
-             ( mask->getRenderScale().y != args.renderScale.y) ||
-             ( ( mask->getField() != eFieldNone) /* for DaVinci Resolve */ && ( mask->getField() != args.fieldToRender) ) ) {
-            setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-            throwSuiteStatusException(kOfxStatFailed);
-        }
+        checkBadRenderScaleOrField(mask, args);
     }
     if (doMasking) {
         bool maskInvert;
@@ -606,7 +598,7 @@ PLogLinPlugin::setupAndProcess(PLogLinProcessorBase &processor,
 
     processor.setDstImg( dst.get() );
     processor.setSrcImg( src.get() );
-    processor.setRenderWindow(args.renderWindow);
+    processor.setRenderWindow(args.renderWindow, args.renderScale);
 
     // TODO: fetch noise parameter values
 
@@ -644,8 +636,8 @@ PLogLinPlugin::render(const RenderArguments &args)
     // instantiate the render code based on the pixel depth of the dst clip
     PixelComponentEnum dstComponents  = _dstClip->getPixelComponents();
 
-    assert( kSupportsMultipleClipPARs   || !_srcClip || _srcClip->getPixelAspectRatio() == _dstClip->getPixelAspectRatio() );
-    assert( kSupportsMultipleClipDepths || !_srcClip || _srcClip->getPixelDepth()       == _dstClip->getPixelDepth() );
+    assert( kSupportsMultipleClipPARs   || !_srcClip || !_srcClip->isConnected() || _srcClip->getPixelAspectRatio() == _dstClip->getPixelAspectRatio() );
+    assert( kSupportsMultipleClipDepths || !_srcClip || !_srcClip->isConnected() || _srcClip->getPixelDepth()       == _dstClip->getPixelDepth() );
     assert(dstComponents == ePixelComponentRGBA || dstComponents == ePixelComponentRGB);
     // do the rendering
     switch (dstComponents) {

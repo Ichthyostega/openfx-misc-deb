@@ -302,6 +302,7 @@ CImgFilterPluginHelperBase::describeInContextEnd(ImageEffectDescriptor &desc,
 void
 CImgFilterPluginHelperBase::setupAndFill(PixelProcessorFilterBase & processor,
                                          const OfxRectI &renderWindow,
+                                         const OfxPointD &renderScale,
                                          void *dstPixelData,
                                          const OfxRectI& dstBounds,
                                          PixelComponentEnum dstPixelComponents,
@@ -316,7 +317,7 @@ CImgFilterPluginHelperBase::setupAndFill(PixelProcessorFilterBase & processor,
     processor.setDstImg(dstPixelData, dstBounds, dstPixelComponents, dstPixelComponentCount, dstPixelDepth, dstRowBytes);
 
     // set the render window
-    processor.setRenderWindow(renderWindow);
+    processor.setRenderWindow(renderWindow, renderScale);
 
     // Call the base class process member, this will call the derived templated process code
     processor.process();
@@ -327,6 +328,7 @@ void
 CImgFilterPluginHelperBase::setupAndCopy(PixelProcessorFilterBase & processor,
                                          double time,
                                          const OfxRectI &renderWindow,
+                                         const OfxPointD &renderScale,
                                          const Image* orig,
                                          const Image* mask,
                                          const void *srcPixelData,
@@ -347,6 +349,7 @@ CImgFilterPluginHelperBase::setupAndCopy(PixelProcessorFilterBase & processor,
                                          double mix,
                                          bool maskInvert)
 {
+# ifndef NDEBUG
     // src may not be valid over the renderWindow
     //assert(srcPixelData &&
     //       srcBounds.x1 <= renderWindow.x1 && renderWindow.x2 <= srcBounds.x2 &&
@@ -359,6 +362,7 @@ CImgFilterPluginHelperBase::setupAndCopy(PixelProcessorFilterBase & processor,
     if ( srcPixelData && (srcBitDepth != dstPixelDepth) ) {
         throwSuiteStatusException(kOfxStatErrFormat);
     }
+# endif
 
     if ( Coords::rectIsEmpty(renderWindow) ) {
         return;
@@ -377,7 +381,7 @@ CImgFilterPluginHelperBase::setupAndCopy(PixelProcessorFilterBase & processor,
     processor.setSrcImg(srcPixelData, srcBounds, srcPixelComponents, srcPixelComponentCount, srcBitDepth, srcRowBytes, srcBoundary);
 
     // set the render window
-    processor.setRenderWindow(renderWindow);
+    processor.setRenderWindow(renderWindow, renderScale);
 
     processor.setPremultMaskMix(premult, premultChannel, mix);
 

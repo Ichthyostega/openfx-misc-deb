@@ -173,7 +173,6 @@ enum SourceAlphaEnum
 
 static Color::LutManager<Mutex>* gLutManager;
 
-
 class ChromaKeyerProcessorBase
     : public ImageProcessor
 {
@@ -369,8 +368,9 @@ public:
     }
 
 private:
-    void multiThreadProcessImages(OfxRectI procWindow)
+    void multiThreadProcessImages(const OfxRectI& procWindow, const OfxPointD& rs) OVERRIDE FINAL
     {
+        unused(rs);
         for (int y = procWindow.y1; y < procWindow.y2; ++y) {
             if ( _effect.abort() ) {
                 break;
@@ -500,7 +500,7 @@ private:
                         // [FD] there is an error in the paper, which doesn't take into account chrominance denormalization:
                         // (X,Z) was computed from twice the chrominance, so subtracting Kfg from X means to
                         // subtract Kfg/2 from (Cb,Cr).
-                        if ( (fgx_scaled > 0) && ( (_suppressionAngle >= 180.) || (fgx_scaled - std::abs(fgz) / _tan__suppressionAngle2 > 0.) ) ) {
+                        if ( (fgx_scaled > 0) && ( (_suppressionAngle <= 0.) || (_suppressionAngle >= 180.) || (fgx_scaled - std::abs(fgz) / _tan__suppressionAngle2 > 0.) ) ) {
                             fgcb = 0;
                             fgcr = 0;
                         } else {
@@ -639,6 +639,7 @@ public:
         , _outputMode(NULL)
         , _sourceAlpha(NULL)
     {
+
         _dstClip = fetchClip(kOfxImageEffectOutputClipName);
         assert( _dstClip && (!_dstClip->isConnected() || _dstClip->getPixelComponents() == ePixelComponentRGB ||
                              _dstClip->getPixelComponents() == ePixelComponentRGBA) );
@@ -711,6 +712,7 @@ ChromaKeyerPlugin::setupAndProcess(ChromaKeyerProcessorBase &processor,
     if ( !dst.get() ) {
         throwSuiteStatusException(kOfxStatFailed);
     }
+# ifndef NDEBUG
     BitDepthEnum dstBitDepth    = dst->getPixelDepth();
     PixelComponentEnum dstComponents  = dst->getPixelComponents();
     if ( ( dstBitDepth != _dstClip->getPixelDepth() ) ||
@@ -718,28 +720,21 @@ ChromaKeyerPlugin::setupAndProcess(ChromaKeyerProcessorBase &processor,
         setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong depth or components");
         throwSuiteStatusException(kOfxStatFailed);
     }
-    if ( (dst->getRenderScale().x != args.renderScale.x) ||
-         ( dst->getRenderScale().y != args.renderScale.y) ||
-         ( ( dst->getField() != eFieldNone) /* for DaVinci Resolve */ && ( dst->getField() != args.fieldToRender) ) ) {
-        setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-        throwSuiteStatusException(kOfxStatFailed);
-    }
+    checkBadRenderScaleOrField(dst, args);
+# endif
+
     auto_ptr<const Image> src( ( _srcClip && _srcClip->isConnected() ) ?
                                     _srcClip->fetchImage(time) : 0 );
     auto_ptr<const Image> bg( ( _bgClip && _bgClip->isConnected() ) ?
                                    _bgClip->fetchImage(time) : 0 );
+# ifndef NDEBUG
     if ( src.get() ) {
         BitDepthEnum srcBitDepth      = src->getPixelDepth();
         //PixelComponentEnum srcComponents = src->getPixelComponents();
         if (srcBitDepth != dstBitDepth /* || srcComponents != dstComponents*/) { // ChromaKeyer outputs RGBA but may have RGB input
             throwSuiteStatusException(kOfxStatErrImageFormat);
         }
-        if ( (src->getRenderScale().x != args.renderScale.x) ||
-             ( src->getRenderScale().y != args.renderScale.y) ||
-             ( ( src->getField() != eFieldNone) /* for DaVinci Resolve */ && ( src->getField() != args.fieldToRender) ) ) {
-            setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-            throwSuiteStatusException(kOfxStatFailed);
-        }
+        checkBadRenderScaleOrField(src, args);
     }
 
     if ( bg.get() ) {
@@ -748,34 +743,20 @@ ChromaKeyerPlugin::setupAndProcess(ChromaKeyerProcessorBase &processor,
         if (srcBitDepth != dstBitDepth /* || srcComponents != dstComponents*/) { // ChromaKeyer outputs RGBA but may have RGB input
             throwSuiteStatusException(kOfxStatErrImageFormat);
         }
-        if ( (bg->getRenderScale().x != args.renderScale.x) ||
-             ( bg->getRenderScale().y != args.renderScale.y) ||
-             ( ( bg->getField() != eFieldNone) /* for DaVinci Resolve */ && ( bg->getField() != args.fieldToRender) ) ) {
-            setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-            throwSuiteStatusException(kOfxStatFailed);
-        }
+        checkBadRenderScaleOrField(bg, args);
     }
+# endif
 
     // auto ptr for the masks.
     auto_ptr<const Image> inMask( ( _inMaskClip && _inMaskClip->isConnected() ) ?
                                        _inMaskClip->fetchImage(time) : 0 );
     if ( inMask.get() ) {
-        if ( (inMask->getRenderScale().x != args.renderScale.x) ||
-             ( inMask->getRenderScale().y != args.renderScale.y) ||
-             ( ( inMask->getField() != eFieldNone) /* for DaVinci Resolve */ && ( inMask->getField() != args.fieldToRender) ) ) {
-            setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-            throwSuiteStatusException(kOfxStatFailed);
-        }
+        checkBadRenderScaleOrField(inMask, args);
     }
     auto_ptr<const Image> outMask( ( _outMaskClip && _outMaskClip->isConnected() ) ?
                                         _outMaskClip->fetchImage(time) : 0 );
     if ( outMask.get() ) {
-        if ( (outMask->getRenderScale().x != args.renderScale.x) ||
-             ( outMask->getRenderScale().y != args.renderScale.y) ||
-             ( ( outMask->getField() != eFieldNone) /* for DaVinci Resolve */ && ( outMask->getField() != args.fieldToRender) ) ) {
-            setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-            throwSuiteStatusException(kOfxStatFailed);
-        }
+        checkBadRenderScaleOrField(outMask, args);
     }
 
     OfxRGBColourD keyColor;
@@ -791,7 +772,7 @@ ChromaKeyerPlugin::setupAndProcess(ChromaKeyerProcessorBase &processor,
     processor.setValues(keyColor, colorspace, linear, acceptanceAngle, suppressionAngle, keyLift, keyGain, outputMode, sourceAlpha);
     processor.setDstImg( dst.get() );
     processor.setSrcImgs( src.get(), bg.get(), inMask.get(), outMask.get() );
-    processor.setRenderWindow(args.renderWindow);
+    processor.setRenderWindow(args.renderWindow, args.renderScale);
 
     processor.process();
 } // ChromaKeyerPlugin::setupAndProcess
@@ -802,17 +783,19 @@ ChromaKeyerPlugin::render(const RenderArguments &args)
 {
     // instantiate the render code based on the pixel depth of the dst clip
     BitDepthEnum dstBitDepth    = _dstClip->getPixelDepth();
+
+    assert( kSupportsMultipleClipPARs   || !_srcClip || !_srcClip->isConnected() || _srcClip->getPixelAspectRatio() == _dstClip->getPixelAspectRatio() );
+    assert( kSupportsMultipleClipDepths || !_srcClip || !_srcClip->isConnected() || _srcClip->getPixelDepth()       == _dstClip->getPixelDepth() );
+
+# ifndef NDEBUG
     PixelComponentEnum dstComponents  = _dstClip->getPixelComponents();
-
-    assert( kSupportsMultipleClipPARs   || !_srcClip || _srcClip->getPixelAspectRatio() == _dstClip->getPixelAspectRatio() );
-    assert( kSupportsMultipleClipDepths || !_srcClip || _srcClip->getPixelDepth()       == _dstClip->getPixelDepth() );
-
     if (dstComponents != ePixelComponentRGBA) {
         setPersistentMessage(Message::eMessageError, "", "OFX Host dit not take into account output components");
         throwSuiteStatusException(kOfxStatErrImageFormat);
 
         return;
     }
+# endif
 
     switch (dstBitDepth) {
     //case eBitDepthUByte: {

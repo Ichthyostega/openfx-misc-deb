@@ -52,13 +52,18 @@
     defined __ICL || \
     defined __DMC__ || \
     defined __BORLANDC__ )
-// For DLLs that are loaded dynamically after the process has started (delay load, COM objects,
+// "For DLLs that are loaded dynamically after the process has started (delay load, COM objects,
 // explicit LoadLibrary, etc) __declspec(thread) does not work on Windows XP, 2003 Server and
-// earlier OSes, but does work on Vista and 2008 Server.
-// http://msdn.microsoft.com/en-us/library/9w1sdazb%28v=vs.80%29.aspx#1
+// earlier OSes, but does work on Vista and 2008 Server."
+// https://web.archive.org/web/20121022172711/http://msdn.microsoft.com:80/en-US/library/9w1sdazb(v=vs.80).aspx#1
 // Unfortunately, OFX plugins are loaded using LoadLibrary()
-//#  define thread_local __declspec(thread)
-#pragma message WARN("CImg plugins cannot be aborted when compiled with this compiler. Please use MinGW, GCC or Clang.")
+// _WIN32_WINNT = 0x0600 for Windows Server 2008 and Windows Vista.
+#  if defined(_WIN32_WINNT) && (_WIN32_WINNT >= 0x0600)
+#    define thread_local __declspec(thread)
+#    define HAVE_THREAD_LOCAL
+#  else
+#    pragma message WARN("CImg plugins cannot be aborted when compiled with this compiler. Please use MinGW, GCC or Clang.")
+#  endif
 /* note that ICC (linux) and Clang are covered by __GNUC__ */
 # elif defined __GNUC__ || \
     defined __SUNPRO_C || \
@@ -119,7 +124,11 @@
 #define cimg_namespace_suffix openfx_misc
 #ifdef _OPENMP
 #  ifndef cimg_use_openmp
-#    define cimg_use_openmp
+#    define cimg_use_openmp 1
+#  endif
+#else
+#  ifndef cimg_use_openmp
+#    define cimg_use_openmp 0
 #  endif
 #endif
 #define cimg_verbosity 0
@@ -179,7 +188,7 @@ struct tls
 inline void
 gImageEffectAbort()
 {
-#  ifdef cimg_use_openmp
+#  if cimg_use_openmp!=0
     if ( omp_get_thread_num() ) {
         return;
     }
@@ -212,7 +221,7 @@ struct tls
 inline void
 gImageEffectAbort()
 {
-#  ifdef cimg_use_openmp
+#  if cimg_use_openmp!=0
     if ( omp_get_thread_num() ) {
         return;
     }
@@ -284,6 +293,7 @@ protected:
 
     void setupAndFill(OFX::PixelProcessorFilterBase & processor,
                       const OfxRectI &renderWindow,
+                      const OfxPointD &renderScale,
                       void *dstPixelData,
                       const OfxRectI& dstBounds,
                       OFX::PixelComponentEnum dstPixelComponents,
@@ -294,6 +304,7 @@ protected:
     void setupAndCopy(OFX::PixelProcessorFilterBase & processor,
                       double time,
                       const OfxRectI &renderWindow,
+                      const OfxPointD &renderScale,
                       const OFX::Image* orig,
                       const OFX::Image* mask,
                       const void *srcPixelData,
@@ -426,9 +437,11 @@ template <class Params, bool sourceIsOptional>
 void
 CImgFilterPluginHelper<Params, sourceIsOptional>::render(const OFX::RenderArguments &args)
 {
+# ifndef NDEBUG
     if ( !_supportsRenderScale && ( (args.renderScale.x != 1.) || (args.renderScale.y != 1.) ) ) {
         OFX::throwSuiteStatusException(kOfxStatFailed);
     }
+# endif
 
     const double time = args.time;
     const OfxPointD& renderScale = args.renderScale;
@@ -437,12 +450,7 @@ CImgFilterPluginHelper<Params, sourceIsOptional>::render(const OFX::RenderArgume
     if ( !dst.get() ) {
         OFX::throwSuiteStatusException(kOfxStatFailed);
     }
-    if ( (dst->getRenderScale().x != renderScale.x) ||
-         ( dst->getRenderScale().y != renderScale.y) ||
-         ( ( dst->getField() != OFX::eFieldNone) /* for DaVinci Resolve */ && ( dst->getField() != args.fieldToRender) ) ) {
-        setPersistentMessage(OFX::Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-        OFX::throwSuiteStatusException(kOfxStatFailed);
-    }
+    checkBadRenderScaleOrField(dst, args);
     const OFX::BitDepthEnum dstBitDepth       = dst->getPixelDepth();
     const OFX::PixelComponentEnum dstPixelComponents  = dst->getPixelComponents();
     const int dstPixelComponentCount = dst->getPixelComponentCount();
@@ -451,17 +459,14 @@ CImgFilterPluginHelper<Params, sourceIsOptional>::render(const OFX::RenderArgume
     OFX::auto_ptr<const OFX::Image> src( ( _srcClip && _srcClip->isConnected() ) ?
                                          _srcClip->fetchImage(args.time) : 0 );
     if ( src.get() ) {
+#     ifndef NDEBUG
         OFX::BitDepthEnum srcBitDepth      = src->getPixelDepth();
         OFX::PixelComponentEnum srcPixelComponents = src->getPixelComponents();
         if ( (srcBitDepth != dstBitDepth) || (srcPixelComponents != dstPixelComponents) ) {
             OFX::throwSuiteStatusException(kOfxStatErrImageFormat);
         }
-        if ( (src->getRenderScale().x != renderScale.x) ||
-             ( src->getRenderScale().y != renderScale.y) ||
-             ( ( src->getField() != OFX::eFieldNone) /* for DaVinci Resolve */ && ( src->getField() != args.fieldToRender) ) ) {
-            setPersistentMessage(OFX::Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-            OFX::throwSuiteStatusException(kOfxStatFailed);
-        }
+        checkBadRenderScaleOrField(src, args);
+#     endif
 #if 0
     } else {
         // src is considered black and transparent, just fill black to dst and return
@@ -609,12 +614,7 @@ CImgFilterPluginHelper<Params, sourceIsOptional>::render(const OFX::RenderArgume
         processWindow.y2 = processWindow.y1;
     }
     if ( mask.get() ) {
-        if ( (mask->getRenderScale().x != renderScale.x) ||
-             ( mask->getRenderScale().y != renderScale.y) ||
-             ( ( mask->getField() != OFX::eFieldNone) /* for DaVinci Resolve */ && ( mask->getField() != args.fieldToRender) ) ) {
-            setPersistentMessage(OFX::Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-            OFX::throwSuiteStatusException(kOfxStatFailed);
-        }
+        checkBadRenderScaleOrField(mask, args);
 
         if (_supportsTiles) {
             // shrink the processWindow at much as possible
@@ -678,19 +678,19 @@ CImgFilterPluginHelper<Params, sourceIsOptional>::render(const OFX::RenderArgume
         }
         assert( fred.get() );
         if ( fred.get() ) {
-            setupAndCopy(*fred, time, copyWindowN, src.get(), mask.get(),
+            setupAndCopy(*fred, time, copyWindowN, renderScale, src.get(), mask.get(),
                          srcPixelData, srcBounds, srcPixelComponents, srcPixelComponentCount, srcBitDepth, srcRowBytes, srcBoundary,
                          dstPixelData, dstBounds, dstPixelComponents, dstPixelComponentCount, dstBitDepth, dstRowBytes,
                          premult, premultChannel, mix, maskInvert);
-            setupAndCopy(*fred, time, copyWindowS, src.get(), mask.get(),
+            setupAndCopy(*fred, time, copyWindowS, renderScale, src.get(), mask.get(),
                          srcPixelData, srcBounds, srcPixelComponents, srcPixelComponentCount, srcBitDepth, srcRowBytes, srcBoundary,
                          dstPixelData, dstBounds, dstPixelComponents, dstPixelComponentCount, dstBitDepth, dstRowBytes,
                          premult, premultChannel, mix, maskInvert);
-            setupAndCopy(*fred, time, copyWindowW, src.get(), mask.get(),
+            setupAndCopy(*fred, time, copyWindowW, renderScale, src.get(), mask.get(),
                          srcPixelData, srcBounds, srcPixelComponents, srcPixelComponentCount, srcBitDepth, srcRowBytes, srcBoundary,
                          dstPixelData, dstBounds, dstPixelComponents, dstPixelComponentCount, dstBitDepth, dstRowBytes,
                          premult, premultChannel, mix, maskInvert);
-            setupAndCopy(*fred, time, copyWindowE, src.get(), mask.get(),
+            setupAndCopy(*fred, time, copyWindowE, renderScale, src.get(), mask.get(),
                          srcPixelData, srcBounds, srcPixelComponents, srcPixelComponentCount, srcBitDepth, srcRowBytes, srcBoundary,
                          dstPixelData, dstBounds, dstPixelComponents, dstPixelComponentCount, dstBitDepth, dstRowBytes,
                          premult, premultChannel, mix, maskInvert);
@@ -754,7 +754,7 @@ CImgFilterPluginHelper<Params, sourceIsOptional>::render(const OFX::RenderArgume
     }
 #endif
 
-#ifdef cimg_use_openmp
+#if cimg_use_openmp!=0
     // set the number of OpenMP threads to a reasonable value
     // (but remember that the OpenMP threads are not counted my the multithread suite)
     {
@@ -810,7 +810,7 @@ CImgFilterPluginHelper<Params, sourceIsOptional>::render(const OFX::RenderArgume
         }
         assert( fred.get() );
         if ( fred.get() ) {
-            setupAndCopy(*fred, time, srcRoI, src.get(), mask.get(),
+            setupAndCopy(*fred, time, srcRoI, renderScale, src.get(), mask.get(),
                          srcPixelData, srcBounds, srcPixelComponents, srcPixelComponentCount, srcBitDepth, srcRowBytes, srcBoundary,
                          tmpPixelData, tmpBounds, tmpPixelComponents, tmpPixelComponentCount, tmpBitDepth, tmpRowBytes,
                          premult, premultChannel, mix, maskInvert);
@@ -915,7 +915,7 @@ CImgFilterPluginHelper<Params, sourceIsOptional>::render(const OFX::RenderArgume
                 maskcimg.fill(1.);
             } else {
                 copyPixels(*this,
-                           srcRoI,
+                           srcRoI, renderScale,
                            mask.get(),
                            maskcimg.data(),
                            srcRoI,
@@ -1022,7 +1022,7 @@ CImgFilterPluginHelper<Params, sourceIsOptional>::render(const OFX::RenderArgume
         }
         assert( fred.get() );
         if ( fred.get() ) {
-            setupAndCopy(*fred, time, processWindow, src.get(), mask.get(),
+            setupAndCopy(*fred, time, processWindow, renderScale, src.get(), mask.get(),
                          tmpPixelData, tmpBounds, tmpPixelComponents, tmpPixelComponentCount, tmpBitDepth, tmpRowBytes, 0,
                          dstPixelData, dstBounds, dstPixelComponents, dstPixelComponentCount, dstBitDepth, dstRowBytes,
                          premult, premultChannel, mix, maskInvert);
@@ -1041,9 +1041,11 @@ void
 CImgFilterPluginHelper<Params, sourceIsOptional>::getRegionsOfInterest(const OFX::RegionsOfInterestArguments &args,
                                                                        OFX::RegionOfInterestSetter &rois)
 {
+# ifndef NDEBUG
     if ( !_supportsRenderScale && ( (args.renderScale.x != 1.) || (args.renderScale.y != 1.) ) ) {
         OFX::throwSuiteStatusException(kOfxStatFailed);
     }
+# endif
     const double time = args.time;
     const OfxRectD& regionOfInterest = args.regionOfInterest;
     OfxRectD srcRoI;
@@ -1085,9 +1087,11 @@ bool
 CImgFilterPluginHelper<Params, sourceIsOptional>::getRegionOfDefinition(const OFX::RegionOfDefinitionArguments &args,
                                                                         OfxRectD &rod)
 {
+# ifndef NDEBUG
     if ( !_supportsRenderScale && ( (args.renderScale.x != 1.) || (args.renderScale.y != 1.) ) ) {
         OFX::throwSuiteStatusException(kOfxStatFailed);
     }
+# endif
     Params params;
     getValuesAtTime(args.time, params);
 
@@ -1117,9 +1121,11 @@ CImgFilterPluginHelper<Params, sourceIsOptional>::isIdentity(const OFX::IsIdenti
                                                              double & /*identityTime*/
                                                              , int& /*view*/, std::string& /*plane*/)
 {
+# ifndef NDEBUG
     if ( !_supportsRenderScale && ( (args.renderScale.x != 1.) || (args.renderScale.y != 1.) ) ) {
         OFX::throwSuiteStatusException(kOfxStatFailed);
     }
+# endif
     const double time = args.time;
     double mix;
     _mix->getValueAtTime(time, mix);

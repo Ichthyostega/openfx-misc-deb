@@ -214,9 +214,8 @@ private:
     }
 
     // and do some processing
-    void multiThreadProcessImages(OfxRectI procWindow)
+    void multiThreadProcessImages(const OfxRectI& procWindow, const OfxPointD& rs) OVERRIDE FINAL
     {
-        OfxPointD rs = _dstImg->getRenderScale();
         double par = _dstImg->getPixelAspectRatio();
         OfxPointD c; // center position in pixel
 
@@ -353,6 +352,7 @@ public:
         , _gamma(NULL)
         , _rotate(NULL)
     {
+
         _srcClip = fetchClip(kOfxImageEffectSimpleSourceClipName);
         assert( _srcClip && (!_srcClip->isConnected() || OFX_COMPONENTS_OK(_srcClip->getPixelComponents())) );
         _centerSaturation = fetchDoubleParam(kParamCenterSaturation);
@@ -406,6 +406,7 @@ ColorWheelPlugin::setupAndProcess(ColorWheelProcessorBase &processor,
     if ( !dst.get() ) {
         throwSuiteStatusException(kOfxStatFailed);
     }
+# ifndef NDEBUG
     BitDepthEnum dstBitDepth    = dst->getPixelDepth();
     PixelComponentEnum dstComponents  = dst->getPixelComponents();
     if ( ( dstBitDepth != _dstClip->getPixelDepth() ) ||
@@ -413,18 +414,14 @@ ColorWheelPlugin::setupAndProcess(ColorWheelProcessorBase &processor,
         setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong depth or components");
         throwSuiteStatusException(kOfxStatFailed);
     }
-    if ( (dst->getRenderScale().x != args.renderScale.x) ||
-         ( dst->getRenderScale().y != args.renderScale.y) ||
-         ( ( dst->getField() != eFieldNone) /* for DaVinci Resolve */ && ( dst->getField() != args.fieldToRender) ) ) {
-        setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-        throwSuiteStatusException(kOfxStatFailed);
-    }
-
+    checkBadRenderScaleOrField(dst, args);
+# endif
+    
     // set the images
     processor.setDstImg( dst.get() );
 
     // set the render window
-    processor.setRenderWindow(args.renderWindow);
+    processor.setRenderWindow(args.renderWindow, args.renderScale);
 
     double centerSaturation = _centerSaturation->getValueAtTime(time);
     double edgeSaturation = _edgeSaturation->getValueAtTime(time);

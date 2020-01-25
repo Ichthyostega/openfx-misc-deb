@@ -146,8 +146,9 @@ public:
     {}
 
     // and do some processing
-    void multiThreadProcessImages(OfxRectI procWindow)
+    void multiThreadProcessImages(const OfxRectI& procWindow, const OfxPointD& rs) OVERRIDE FINAL
     {
+        unused(rs);
         float noiseLevel = _noiseLevel;
 
         // set up a random number generator and set the seed
@@ -214,6 +215,7 @@ public:
         , _seed(NULL)
         , _staticSeed(NULL)
     {
+
         _noise   = fetchDoubleParam(kParamNoiseLevel);
         _density = fetchDoubleParam(kParamNoiseDensity);
         _seed   = fetchIntParam(kParamSeed);
@@ -253,6 +255,7 @@ RandPlugin::setupAndProcess(RandGeneratorBase &processor,
     if ( !dst.get() ) {
         throwSuiteStatusException(kOfxStatFailed);
     }
+# ifndef NDEBUG
     BitDepthEnum dstBitDepth    = dst->getPixelDepth();
     PixelComponentEnum dstComponents  = dst->getPixelComponents();
     if ( ( dstBitDepth != _dstClip->getPixelDepth() ) ||
@@ -260,18 +263,14 @@ RandPlugin::setupAndProcess(RandGeneratorBase &processor,
         setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong depth or components");
         throwSuiteStatusException(kOfxStatFailed);
     }
-    if ( (dst->getRenderScale().x != args.renderScale.x) ||
-         ( dst->getRenderScale().y != args.renderScale.y) ||
-         ( ( dst->getField() != eFieldNone) /* for DaVinci Resolve */ && ( dst->getField() != args.fieldToRender) ) ) {
-        setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-        throwSuiteStatusException(kOfxStatFailed);
-    }
+    checkBadRenderScaleOrField(dst, args);
+# endif
 
     // set the images
     processor.setDstImg( dst.get() );
 
     // set the render window
-    processor.setRenderWindow(args.renderWindow);
+    processor.setRenderWindow(args.renderWindow, args.renderScale);
 
     double noise;
     _noise->getValueAtTime(time, noise);

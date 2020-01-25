@@ -149,8 +149,9 @@ public:
 
 private:
     // and do some processing
-    void multiThreadProcessImages(OfxRectI procWindow)
+    void multiThreadProcessImages(const OfxRectI& procWindow, const OfxPointD& rs) OVERRIDE FINAL
     {
+        unused(rs);
 #pragma message WARN("TODO: write the render function as described in the plugin help")
         float tmpPix[nComponents];
         //const OfxRectI srcRoD = _srcImg->getRegionOfDefinition();
@@ -201,6 +202,7 @@ public:
         , _srcClip(NULL)
         , _maskClip(NULL)
     {
+
         _dstClip = fetchClip(kOfxImageEffectOutputClipName);
         assert( _dstClip && (!_dstClip->isConnected() || _dstClip->getPixelComponents() == ePixelComponentRGB ||
                              _dstClip->getPixelComponents() == ePixelComponentRGBA ||
@@ -286,6 +288,7 @@ TestRenderPlugin<supportsTiles, supportsMultiResolution, supportsRenderScale>::s
     if ( !dst.get() ) {
         throwSuiteStatusException(kOfxStatFailed);
     }
+# ifndef NDEBUG
     BitDepthEnum dstBitDepth    = dst->getPixelDepth();
     PixelComponentEnum dstComponents  = dst->getPixelComponents();
     if ( ( dstBitDepth != _dstClip->getPixelDepth() ) ||
@@ -293,26 +296,17 @@ TestRenderPlugin<supportsTiles, supportsMultiResolution, supportsRenderScale>::s
         setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong depth or components");
         throwSuiteStatusException(kOfxStatFailed);
     }
-    if ( (dst->getRenderScale().x != args.renderScale.x) ||
-         ( dst->getRenderScale().y != args.renderScale.y) ||
-         ( ( dst->getField() != eFieldNone) /* for DaVinci Resolve */ && ( dst->getField() != args.fieldToRender) ) ) {
-        setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-        throwSuiteStatusException(kOfxStatFailed);
-    }
+    checkBadRenderScaleOrField(dst, args);
+# endif
 
     // fetch main input image
     auto_ptr<const Image> src( ( _srcClip && _srcClip->isConnected() ) ?
                                     _srcClip->fetchImage(args.time) : 0 );
-
     // make sure bit depths are sane
     if ( src.get() ) {
         assert(_srcClip);
-        if ( (src->getRenderScale().x != args.renderScale.x) ||
-             ( src->getRenderScale().y != args.renderScale.y) ||
-             ( ( src->getField() != eFieldNone) /* for DaVinci Resolve */ && ( src->getField() != args.fieldToRender) ) ) {
-            setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-            throwSuiteStatusException(kOfxStatFailed);
-        }
+        checkBadRenderScaleOrField(src, args);
+#     ifndef NDEBUG
         BitDepthEnum srcBitDepth      = src->getPixelDepth();
         PixelComponentEnum srcComponents = src->getPixelComponents();
 
@@ -320,6 +314,7 @@ TestRenderPlugin<supportsTiles, supportsMultiResolution, supportsRenderScale>::s
         if ( (srcBitDepth != dstBitDepth) || (srcComponents != dstComponents) ) {
             throwSuiteStatusException(kOfxStatErrImageFormat);
         }
+#     endif
         OfxRectI srcRod; // = src->getRegionOfDefinition(); //  Nuke's image RoDs are wrong
         Coords::toPixelEnclosing(_srcClip->getRegionOfDefinition(args.time), args.renderScale, _srcClip->getPixelAspectRatio(), &srcRod);
         const OfxRectI& srcBounds = src->getBounds();
@@ -363,14 +358,7 @@ TestRenderPlugin<supportsTiles, supportsMultiResolution, supportsRenderScale>::s
 
     // do we do masking
     if (doMasking) {
-        if ( mask.get() ) {
-            if ( (mask->getRenderScale().x != args.renderScale.x) ||
-                 ( mask->getRenderScale().y != args.renderScale.y) ||
-                 ( ( mask->getField() != eFieldNone) /* for DaVinci Resolve */ && ( mask->getField() != args.fieldToRender) ) ) {
-                setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-                throwSuiteStatusException(kOfxStatFailed);
-            }
-        }
+        checkBadRenderScaleOrField(mask, args);
         bool maskInvert;
         _maskInvert->getValueAtTime(args.time, maskInvert);
         // say we are masking
@@ -389,7 +377,7 @@ TestRenderPlugin<supportsTiles, supportsMultiResolution, supportsRenderScale>::s
     processor.setSrcImg( src.get() );
 
     // set the render window
-    processor.setRenderWindow(args.renderWindow);
+    processor.setRenderWindow(args.renderWindow, args.renderScale);
 
     // Call the base class process member, this will call the derived templated process code
     processor.process();
@@ -428,12 +416,14 @@ template<bool supportsTiles, bool supportsMultiResolution, bool supportsRenderSc
 void
 TestRenderPlugin<supportsTiles, supportsMultiResolution, supportsRenderScale>::render(const RenderArguments &args)
 {
+# ifndef NDEBUG
     if ( !supportsRenderScale && ( (args.renderScale.x != 1.) || (args.renderScale.y != 1.) ) ) {
         throwSuiteStatusException(kOfxStatFailed);
     }
+# endif
 
-    assert( kSupportsMultipleClipPARs   || !_srcClip || _srcClip->getPixelAspectRatio() == _dstClip->getPixelAspectRatio() );
-    assert( kSupportsMultipleClipDepths || !_srcClip || _srcClip->getPixelDepth()       == _dstClip->getPixelDepth() );
+    assert( kSupportsMultipleClipPARs   || !_srcClip || !_srcClip->isConnected() || _srcClip->getPixelAspectRatio() == _dstClip->getPixelAspectRatio() );
+    assert( kSupportsMultipleClipDepths || !_srcClip || !_srcClip->isConnected() || _srcClip->getPixelDepth()       == _dstClip->getPixelDepth() );
     // instantiate the render code based on the pixel depth of the dst clip
     BitDepthEnum dstBitDepth    = _dstClip->getPixelDepth();
     PixelComponentEnum dstComponents  = _dstClip->getPixelComponents();
@@ -463,9 +453,11 @@ TestRenderPlugin<supportsTiles, supportsMultiResolution, supportsRenderScale>::i
 #endif
                                                                                           )
 {
+# ifndef NDEBUG
     if ( !supportsRenderScale && ( (args.renderScale.x != 1.) || (args.renderScale.y != 1.) ) ) {
         throwSuiteStatusException(kOfxStatFailed);
     }
+# endif
 
     bool forceCopy;
     _forceCopy->getValueAtTime(args.time, forceCopy);
@@ -654,9 +646,11 @@ void
 TestRenderPlugin<supportsTiles, supportsMultiResolution, supportsRenderScale>::changedParam(const InstanceChangedArgs &args,
                                                                                             const std::string &paramName)
 {
+# ifndef NDEBUG
     if ( !supportsRenderScale && ( (args.renderScale.x != 1.) || (args.renderScale.y != 1.) ) ) {
         throwSuiteStatusException(kOfxStatFailed);
     }
+# endif
 
     if (paramName == kParamClipInfo) {
         std::ostringstream oss;
@@ -790,10 +784,12 @@ bool
 TestRenderPlugin<supportsTiles, supportsMultiResolution, supportsRenderScale>::getRegionOfDefinition(const RegionOfDefinitionArguments &args,
                                                                                                      OfxRectD & /*rod*/)
 {
+# ifndef NDEBUG
     if ( !supportsRenderScale && ( (args.renderScale.x != 1.) || (args.renderScale.y != 1.) ) ) {
         throwSuiteStatusException(kOfxStatFailed);
     }
-
+# endif
+    
     // use the default RoD
     return false;
 }

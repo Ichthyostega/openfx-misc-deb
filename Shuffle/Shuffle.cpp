@@ -294,8 +294,9 @@ public:
     }
 
 private:
-    void multiThreadProcessImages(OfxRectI procWindow)
+    void multiThreadProcessImages(const OfxRectI& procWindow, const OfxPointD& rs) OVERRIDE FINAL
     {
+        unused(rs);
         const Image* channelMapImg[nComponentsDst];
         int channelMapComp[nComponentsDst]; // channel component, or value if no image
         int srcMapComp[4]; // R,G,B,A components for src
@@ -474,8 +475,9 @@ public:
     }
 
 private:
-    void multiThreadProcessImages(OfxRectI procWindow)
+    void multiThreadProcessImages(const OfxRectI& procWindow, const OfxPointD& rs) OVERRIDE FINAL
     {
+        unused(rs);
         assert(_inputPlanes.size() == nComponentsDst);
         // now compute the transformed image, component by component
 
@@ -543,6 +545,7 @@ public:
         , _outputComponents(NULL)
         , _setGBAFromR(NULL)
     {
+
         _channelStringParam[0] = _channelStringParam[1] = _channelStringParam[2] = _channelStringParam[3] = 0;
         _dstClip = fetchClip(kOfxImageEffectOutputClipName);
         assert( _dstClip && (1 <= _dstClip->getPixelComponentCount() && _dstClip->getPixelComponentCount() <= 4) );
@@ -896,14 +899,8 @@ ShufflePlugin::setupAndProcess(ShufflerBase &processor,
 {
 
     const double time = args.time;
-    BitDepthEnum dstBitDepth    = dst->getPixelDepth();
     PixelComponentEnum dstComponents  = dst->getPixelComponents();
-    if ( (dst->getRenderScale().x != args.renderScale.x) ||
-         ( dst->getRenderScale().y != args.renderScale.y) ||
-         ( ( dst->getField() != eFieldNone) /* for DaVinci Resolve */ && ( dst->getField() != args.fieldToRender) ) ) {
-        setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-        throwSuiteStatusException(kOfxStatFailed);
-    }
+    checkBadRenderScaleOrField(dst, args);
 
 
     InputChannelEnum r, g, b, a;
@@ -914,26 +911,18 @@ ShufflePlugin::setupAndProcess(ShufflerBase &processor,
     auto_ptr<const Image> srcOther( ( _srcClipOther && _srcClipOther->isConnected() ) ?
                                      _srcClipOther->fetchImage(args.time) : 0 );
     BitDepthEnum srcBitDepth = eBitDepthNone;
+# ifndef NDEBUG
+    BitDepthEnum dstBitDepth    = dst->getPixelDepth();
     PixelComponentEnum srcComponents = ePixelComponentNone;
     if ( srcDefault.get() ) {
-        if ( (srcDefault->getRenderScale().x != args.renderScale.x) ||
-             ( srcDefault->getRenderScale().y != args.renderScale.y) ||
-             ( ( srcDefault->getField() != eFieldNone) /* for DaVinci Resolve */ && ( srcDefault->getField() != args.fieldToRender) ) ) {
-            setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-            throwSuiteStatusException(kOfxStatFailed);
-        }
+        checkBadRenderScaleOrField(srcDefault, args);
         srcBitDepth      = srcDefault->getPixelDepth();
         srcComponents = srcDefault->getPixelComponents();
         assert(_srcClipDefault && _srcClipDefault->getPixelComponents() == srcComponents);
     }
 
     if ( srcOther.get() ) {
-        if ( (srcOther->getRenderScale().x != args.renderScale.x) ||
-             ( srcOther->getRenderScale().y != args.renderScale.y) ||
-             ( ( srcOther->getField() != eFieldNone) /* for DaVinci Resolve */ && ( srcOther->getField() != args.fieldToRender) ) ) {
-            setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-            throwSuiteStatusException(kOfxStatFailed);
-        }
+        checkBadRenderScaleOrField(srcOther, args);
         BitDepthEnum srcOtherBitDepth      = srcOther->getPixelDepth();
         PixelComponentEnum srcOtherComponents = srcOther->getPixelComponents();
         assert(_srcClipOther && _srcClipOther->getPixelComponents() == srcOtherComponents);
@@ -943,6 +932,7 @@ ShufflePlugin::setupAndProcess(ShufflerBase &processor,
             throwSuiteStatusException(kOfxStatErrImageFormat);
         }
     }
+# endif
 
     r = (InputChannelEnum)_channelParam[0]->getValueAtTime(time);
     g = (InputChannelEnum)_channelParam[1]->getValueAtTime(time);
@@ -993,7 +983,7 @@ ShufflePlugin::setupAndProcess(ShufflerBase &processor,
     processor.setValues(outputComponents, outputComponentCount, outputBitDepth, channelMap);
 
     processor.setDstImg(dst);
-    processor.setRenderWindow(args.renderWindow);
+    processor.setRenderWindow(args.renderWindow, args.renderScale);
 
     processor.process();
 } // ShufflePlugin::setupAndProcess
@@ -1029,12 +1019,7 @@ ShufflePlugin::setupAndProcessMultiPlane(MultiPlaneShufflerBase & processor,
 {
     const double time = args.time;
     
-    if ( (dst->getRenderScale().x != args.renderScale.x) ||
-         ( dst->getRenderScale().y != args.renderScale.y) ||
-         ( ( dst->getField() != eFieldNone) /* for DaVinci Resolve */ && ( dst->getField() != args.fieldToRender) ) ) {
-        setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-        throwSuiteStatusException(kOfxStatFailed);
-    }
+    checkBadRenderScaleOrField(dst, args);
 
 
     InputImagesHolder_RAII imagesHolder;
@@ -1075,19 +1060,16 @@ ShufflePlugin::setupAndProcessMultiPlane(MultiPlaneShufflerBase & processor,
         }
 
         if (p.img) {
-            if ( (p.img->getRenderScale().x != args.renderScale.x) ||
-                 ( p.img->getRenderScale().y != args.renderScale.y) ||
-                 ( ( p.img->getField() != eFieldNone) /* for DaVinci Resolve */ && ( p.img->getField() != args.fieldToRender) ) ) {
-                setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-                throwSuiteStatusException(kOfxStatFailed);
-            }
+            checkBadRenderScaleOrField(p.img, args);
             if (srcBitDepth == eBitDepthNone) {
                 srcBitDepth = p.img->getPixelDepth();
             } else {
+#             ifndef NDEBUG
                 // both input must have the same bit depth and components
                 if ( (srcBitDepth != eBitDepthNone) && ( srcBitDepth != p.img->getPixelDepth() ) ) {
                     throwSuiteStatusException(kOfxStatErrImageFormat);
                 }
+#             endif
             }
             if ( (p.channelIndex < 0) || ( p.channelIndex >= (int)p.img->getPixelComponentCount() ) ) {
                 throwSuiteStatusException(kOfxStatErrImageFormat);
@@ -1104,7 +1086,7 @@ ShufflePlugin::setupAndProcessMultiPlane(MultiPlaneShufflerBase & processor,
     processor.setValues(dstNComps, outputBitDepth, planes);
 
     processor.setDstImg(dst);
-    processor.setRenderWindow(args.renderWindow);
+    processor.setRenderWindow(args.renderWindow, args.renderScale);
 
     processor.process();
 } // ShufflePlugin::setupAndProcessMultiPlane
@@ -1272,25 +1254,27 @@ ShufflePlugin::render(const RenderArguments &args)
         if ( !dst.get() ) {
             throwSuiteStatusException(kOfxStatFailed);
         }
-        BitDepthEnum dstBitDepth    = dst->getPixelDepth();
+#    ifndef NDEBUG
+       BitDepthEnum dstBitDepth    = dst->getPixelDepth();
         PixelComponentEnum dstComponents  = dst->getPixelComponents();
         if ( ( dstBitDepth != _dstClip->getPixelDepth() ) ||
             ( dstComponents != _dstClip->getPixelComponents() ) ) {
             setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong depth or components");
             throwSuiteStatusException(kOfxStatFailed);
         }
-
+#     endif
     } else {
         dst.reset( _dstClip->fetchImagePlane( args.time, args.renderView, MultiPlane::ImagePlaneDesc::mapPlaneToOFXPlaneString(dstPlane).c_str() ) );
         if ( !dst.get() ) {
             throwSuiteStatusException(kOfxStatFailed);
         }
-
+#     ifndef NDEBUG
         // In multiplane mode, we cannot expect the image plane to match the clip components
         if (dstBitDepth != _dstClip->getPixelDepth()) {
             setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong depth or components");
             throwSuiteStatusException(kOfxStatFailed);
         }
+#     endif
     }
 
     int dstComponentCount = dst->getPixelComponentCount();
@@ -1418,7 +1402,7 @@ ShufflePlugin::getClipPreferences(ClipPreferencesSetter &clipPreferences)
         clipPreferences.setClipComponents(*_srcClipOther, srcOtherComps);
     }
 
-    if (getImageEffectHostDescription()->supportsMultipleClipDepths) {
+    if (getImageEffectHostDescription()->supportsMultipleClipDepths && _dstClip) {
         // set the bitDepth of _dstClip
         BitDepthEnum outputBitDepth = gOutputBitDepthMap[_outputBitDepth->getValue()];
         clipPreferences.setClipBitDepth(*_dstClip, outputBitDepth);
@@ -1446,7 +1430,7 @@ ShufflePlugin::getClipPreferences(ClipPreferencesSetter &clipPreferences)
             par = _srcClipOther->getPixelAspectRatio();
             setFormat = true;
         }
-        if (setFormat) {
+        if (setFormat && _dstClip) {
             clipPreferences.setOutputFormat(format);
             clipPreferences.setPixelAspectRatio(*_dstClip, par);
         }
@@ -1974,7 +1958,7 @@ ShufflePluginFactory<majorVersion>::describeInContext(ImageEffectDescriptor &des
         desc.addClipPreferencesSlaveParam(*param);
     }
 
-    // ouputBitDepth
+    // outputBitDepth
     if (getImageEffectHostDescription()->supportsMultipleClipDepths) {
         ChoiceParamDescriptor *param = desc.defineChoiceParam(kParamOutputBitDepth);
         param->setLabel(kParamOutputBitDepthLabel);
@@ -2054,7 +2038,7 @@ ShufflePluginFactory<majorVersion>::describeInContext(ImageEffectDescriptor &des
             }
         }
     }
-    // ouputA
+    // outputA
     if (gSupportsRGBA || gSupportsAlpha) {
         if (gIsMultiPlanarV1 || gIsMultiPlanarV2) {
             ChoiceParamDescriptor* a = MultiPlane::Factory::describeInContextAddPlaneChannelChoice(desc, page, clipsForChannels, kParamOutputA, kParamOutputALabel, kParamOutputAHint);

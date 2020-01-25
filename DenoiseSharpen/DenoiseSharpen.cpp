@@ -46,12 +46,13 @@
    - as an estimate of sigma_n, we can use the
  */
 
-#define kUseMultithread // define to use the multithread suite
 //#define DEBUG_STDOUT // output debugging messages on stdout (for Resolve)
 
 #if defined(_OPENMP)
 #include <omp.h>
 #define _GLIBCXX_PARALLEL // enable libstdc++ parallel STL algorithm (eg nth_element, sort...)
+#else
+#define kUseMultithread // define to use the multithread suite
 #endif
 #include <cmath>
 #include <cfloat> // DBL_MAX
@@ -61,6 +62,13 @@
 #define DBG(x) (x)
 #else
 #define DBG(x) (void)0
+#endif
+#ifdef DEBUG
+#include <iostream>
+#include <cstdio>
+#define DBG_(x) (x)
+#else
+#define DBG_(x) (void)0
 #endif
 
 #include "ofxsMaskMix.h"
@@ -72,10 +80,11 @@
 #include "ofxsMultiThread.h"
 #include "ofxsCopier.h"
 #include "ofxOld.h"
+
 #ifdef OFX_USE_MULTITHREAD_MUTEX
 namespace {
-typedef MultiThread::Mutex Mutex;
-typedef MultiThread::AutoMutex AutoMutex;
+typedef OFX::MultiThread::Mutex Mutex;
+typedef OFX::MultiThread::AutoMutex AutoMutex;
 }
 #else
 // some OFX hosts do not have mutex handling in the MT-Suite (e.g. Sony Catalyst Edit)
@@ -109,7 +118,7 @@ OFXS_NAMESPACE_ANONYMOUS_ENTER
     "This plugin allows the separate denoising of image channels in multiple color spaces using wavelets, using the BayesShrink algorithm, and can also sharpen the image details.\n" \
     "\n" \
     "Noise levels for each channel may be either set manually, or analyzed from the image data in each wavelet subband using the MAD (median absolute deviation) estimator.\n" \
-    "Noise analysis is based on the assuption that the noise is Gaussian and additive (it is not intensity-dependent). If there is speckle or salt-and-pepper noise in the images, the Median or SmoothPatchBased filters may be more appropriate.\n" \
+    "Noise analysis is based on the assumption that the noise is Gaussian and additive (it is not intensity-dependent). If there is speckle or salt-and-pepper noise in the images, the Median or SmoothPatchBased filters may be more appropriate.\n" \
     "The color model specifies the channels and the transforms used. Noise levels have to be re-adjusted or re-analyzed when changing the color model.\n" \
     "\n" \
     "## Basic Usage\n" \
@@ -126,7 +135,7 @@ OFXS_NAMESPACE_ANONYMOUS_ENTER
     "\n" \
     "The simplest way to use this plugin is to leave the noise analysis area to the whole image, and click \"Analyze Noise Levels\". Once the analysis is done, \"Lock Noise Analysis\" is checked in order to avoid modifying the essential parameters by mistake.\n" \
     "\n" \
-    "If the image has many textured areas, it may be preferable to select an analysis area with flat colors, free from any details, shadows or hightlights, to avoid considering texture as noise. The AnalysisMask input can be used to mask the analysis, if the rectangular area is not appropriate. Any non-zero pixels in the mask are taken into account. A good option for the AnalysisMask would be to take the inverse of the output of an edge detector and clamp it correctly so that all pixels near the edges have a value of zero..\n" \
+    "If the image has many textured areas, it may be preferable to select an analysis area with flat colors, free from any details, shadows or highlights, to avoid considering texture as noise. The AnalysisMask input can be used to mask the analysis, if the rectangular area is not appropriate. Any non-zero pixels in the mask are taken into account. A good option for the AnalysisMask would be to take the inverse of the output of an edge detector and clamp it correctly so that all pixels near the edges have a value of zero..\n" \
     "\n" \
     "If the sequence to be denoised does not have enough flat areas, you can also connect a reference footage with the same kind of noise to the AnalysisSource input: that source will be used for the analysis only. If no source with flat areas is available, and noise analysis can only be performed on areas which also contain details, it is often preferable to disable very low, low, and sometimes medium frequencies in the \"Frequency Tuning\" parameters group, or at least to lower their gain, since they may be misestimated by the noise analysis process.\n" \
     "If the noise is IID (independent and identically distributed), such as digital sensor noise, only \"Denoise High Frequencies\" should be checked. If the noise has some grain (i.e. it commes from lossy compression of noisy images by a camera, or it is scanned film), then you may want to enable medium frequencies as well. If low and very low frequencies are enabled, but the analysis area is not a flat zone, the signal itself (i.e. the noise-free image) could be considered as noise, and the result may exhibit low contrast and blur.\n" \
@@ -383,8 +392,6 @@ enum ColorModelEnum
 #endif
 
 static bool gHostSupportsDefaultCoordinateSystem = true; // for kParamDefaultsNormalised
-static bool gHostIsResolve = false;
-
 // those are the noise levels on HHi subands that correspond to a
 // Gaussian noise, with the dcraw "a trous" wavelets.
 // dcraw's version:
@@ -788,6 +795,7 @@ public:
         , _maskInvert(NULL)
         , _premultChanged(NULL)
     {
+
         _dstClip = fetchClip(kOfxImageEffectOutputClipName);
         assert( _dstClip && (_dstClip->getPixelComponents() == ePixelComponentRGB ||
                              _dstClip->getPixelComponents() == ePixelComponentRGBA ||
@@ -928,6 +936,9 @@ private:
         updateLabels();
         updateSecret();
         analysisLock();
+        // if adaptiveRadius <= 0, we need to render the whole image anyway, so disable tiles support
+        int adaptiveRadius = _adaptiveRadius->getValue();
+        setSupportsTiles(adaptiveRadius > 0); // normally allowed only in instancechanged()
     }
 
     void analyzeNoiseLevels(const InstanceChangedArgs &args);
@@ -949,7 +960,7 @@ private:
                          const double noiselevels[4], //!< noise levels for high/medium/low/very low frequencies
                          int adaptiveRadius,
                          double denoise_amount, //!< amount parameter
-                         double sharpen_amount, //!< constrast boost amount
+                         double sharpen_amount, //!< contrast boost amount
                          double sharpen_radius, //!< contrast boost radius
                          int startLevel,
                          float a, // progress amount at start
@@ -1750,14 +1761,14 @@ DenoiseSharpenPlugin::wavelet_denoise(float *fimg[4], //!< fimg[0] is the channe
                                       const double noiselevels[4], //!< noise levels for high/medium/low/very low frequencies
                                       int adaptiveRadius,
                                       double denoise_amount, //!< amount parameter
-                                      double sharpen_amount, //!< constrast boost amount
+                                      double sharpen_amount, //!< contrast boost amount
                                       double sharpen_radius, //!< contrast boost radius
                                       int startLevel,
                                       float a, // progress amount at start
                                       float b) // progress increment
 {
     //
-    // BayesShrink (as describred in <https://jo.dreggn.org/home/2011_atrous.pdf>):
+    // BayesShrink (as described in <https://jo.dreggn.org/home/2011_atrous.pdf>):
     // compute sigma_n using the MAD (median absolute deviation at the finest level:
     // sigma_n = median(|d_0|)/0.6745 (could be computed in an analysis step from the first detail subband)
     // The soft shrinkage threshold is
@@ -1964,10 +1975,10 @@ DenoiseSharpenPlugin::wavelet_denoise(float *fimg[4], //!< fimg[0] is the channe
                 // apply smooth threshold
                 if (fimg[hpass][i] < -thold) {
                     fimg[hpass][i] += thold * denoise_amount;
-                    fimg_denoised += _thold;
+                    fimg_denoised += thold;
                 } else if (fimg[hpass][i] >  thold) {
                     fimg[hpass][i] -= thold * denoise_amount;
-                    fimg_denoised -= _thold;
+                    fimg_denoised -= thold;
                 } else {
                     fimg[hpass][i] *= 1. - denoise_amount;
                     fimg_denoised = 0.;
@@ -2216,7 +2227,7 @@ DenoiseSharpenPlugin::render(const RenderArguments &args)
 #ifdef _OPENMP
     // set the number of OpenMP threads to a reasonable value
     // (but remember that the OpenMP threads are not counted my the multithread suite)
-    omp_set_num_threads( (std::max)(1u, MultiThread::getNumCPUs() ) );
+    //omp_set_num_threads( (std::max)(1u, MultiThread::getNumCPUs() ) );
 #endif
     DBG(cout << "render! with " << MultiThread::getNumCPUs() << " CPUs\n");
 
@@ -2225,8 +2236,8 @@ DenoiseSharpenPlugin::render(const RenderArguments &args)
     // instantiate the render code based on the pixel depth of the dst clip
     PixelComponentEnum dstComponents  = _dstClip->getPixelComponents();
 
-    assert( kSupportsMultipleClipPARs   || !_srcClip || _srcClip->getPixelAspectRatio() == _dstClip->getPixelAspectRatio() );
-    assert( kSupportsMultipleClipDepths || !_srcClip || _srcClip->getPixelDepth()       == _dstClip->getPixelDepth() );
+    assert( kSupportsMultipleClipPARs   || !_srcClip || !_srcClip->isConnected() || _srcClip->getPixelAspectRatio() == _dstClip->getPixelAspectRatio() );
+    assert( kSupportsMultipleClipDepths || !_srcClip || !_srcClip->isConnected() || _srcClip->getPixelDepth()       == _dstClip->getPixelDepth() );
     assert(dstComponents == ePixelComponentRGBA || dstComponents == ePixelComponentRGB /*|| dstComponents == ePixelComponentXY*/ || dstComponents == ePixelComponentAlpha);
     // do the rendering
     switch (dstComponents) {
@@ -2303,6 +2314,7 @@ DenoiseSharpenPlugin::setup(const RenderArguments &args,
     if ( !dst.get() ) {
         throwSuiteStatusException(kOfxStatFailed);
     }
+# ifndef NDEBUG
     BitDepthEnum dstBitDepth    = dst->getPixelDepth();
     PixelComponentEnum dstComponents  = dst->getPixelComponents();
     if ( ( dstBitDepth != _dstClip->getPixelDepth() ) ||
@@ -2310,42 +2322,27 @@ DenoiseSharpenPlugin::setup(const RenderArguments &args,
         setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong depth or components");
         throwSuiteStatusException(kOfxStatFailed);
     }
-    if ( !gHostIsResolve && /* DaVinci Resolve always gives rs=1 & field=None on fetched images */
-        ( (dst->getRenderScale().x != args.renderScale.x) ||
-          (dst->getRenderScale().y != args.renderScale.y) ||
-          (dst->getField() != args.fieldToRender) ) ) {
-        setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-        throwSuiteStatusException(kOfxStatFailed);
-    }
+    checkBadRenderScaleOrField(dst, args);
+# endif
     src.reset( ( _srcClip && _srcClip->isConnected() ) ?
                _srcClip->fetchImage(time) : 0 );
     if ( !src.get() ) {
         throwSuiteStatusException(kOfxStatFailed);
     }
+# ifndef NDEBUG
     if ( src.get() ) {
-        if ( !gHostIsResolve && /* DaVinci Resolve always gives rs=1 & field=None on fetched images */
-            ( (src->getRenderScale().x != args.renderScale.x) ||
-              (src->getRenderScale().y != args.renderScale.y) ||
-              (src->getField() != args.fieldToRender) ) ) {
-            setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-            throwSuiteStatusException(kOfxStatFailed);
-        }
+        checkBadRenderScaleOrField(src, args);
         BitDepthEnum srcBitDepth      = src->getPixelDepth();
         PixelComponentEnum srcComponents = src->getPixelComponents();
         if ( (srcBitDepth != dstBitDepth) || (srcComponents != dstComponents) ) {
             throwSuiteStatusException(kOfxStatErrImageFormat);
         }
     }
+# endif
     p.doMasking = ( ( !_maskApply || _maskApply->getValueAtTime(time) ) && _maskClip && _maskClip->isConnected() );
     mask.reset(p.doMasking ? _maskClip->fetchImage(time) : 0);
     if ( mask.get() ) {
-        if ( !gHostIsResolve && /* DaVinci Resolve always gives rs=1 & field=None on fetched images */
-            ( (mask->getRenderScale().x != args.renderScale.x) ||
-              (mask->getRenderScale().y != args.renderScale.y) ||
-              (mask->getField() != args.fieldToRender) ) ) {
-            setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-            throwSuiteStatusException(kOfxStatFailed);
-        }
+        checkBadRenderScaleOrField(mask, args);
     }
     clearPersistentMessage();
 
@@ -2361,6 +2358,7 @@ DenoiseSharpenPlugin::setup(const RenderArguments &args,
         DBG(cout << "render called although analysis not locked and isidentity=true\n");
         copyPixels(*this,
                    args.renderWindow,
+                   args.renderScale,
                    src.get(),
                    dst.get());
         return;
@@ -2437,6 +2435,7 @@ DenoiseSharpenPlugin::setup(const RenderArguments &args,
                                        p.noiseLevel[3][2] > 0 ||
                                        p.noiseLevel[3][3] > 0) && p.denoise_amount[3] > 0.) || p.sharpen_amount[3] > 0. );
 
+    // Note: the following must be consistent with DenoiseSharpenPlugin::getRegionsOfInterest()
     // compute the number of levels (max is 4, which adds 1<<4 = 16 pixels on each side)
     int maxLev = (std::max)( 0, kLevelMax - startLevelFromRenderScale(args.renderScale) );
     int border = borderSize(p.adaptiveRadius, p.b3, maxLev + 1);
@@ -2466,25 +2465,39 @@ DenoiseSharpenPlugin::renderForBitDepth(const RenderArguments &args)
     }
 
     const OfxRectI& procWindow = args.renderWindow;
-
-
+    if (p.srcWindow.x1 > procWindow.x1 || p.srcWindow.x2 < procWindow.x2 ||
+        p.srcWindow.y1 > procWindow.y1 || p.srcWindow.y2 < procWindow.y2) {
+        // Impossible to render, since we do not have the src window
+        // that corresponds to the render window.
+        // This is most probably a host bug.
+        // Check the previous call to DenoiseSharpenPlugin::getRegionsOfInterest(),
+        // it should set the right window.
+        //DBG_(printf("procWindow %d,%d - %d,%d\n", procWindow.x1, procWindow.y1, procWindow.x2, procWindow.y2));
+        //DBG_(printf("p.srcWindow %d,%d - %d,%d\n", p.srcWindow.x1, p.srcWindow.y1, p.srcWindow.x2, p.srcWindow.y2));
+        //DBG_(printf("src->bounds %d,%d - %d,%d\n", src->getBounds().x1, src->getBounds().y1, src->getBounds().x2, src->getBounds().y2));
+        DBG_(printf("DenoiseSharpen: Error: host did not give the right region of the source image.\n"));
+        throwSuiteStatusException(kOfxStatErrBadIndex);
+    }
     // temporary buffers: one for each channel plus 2 for processing
     unsigned int iwidth = p.srcWindow.x2 - p.srcWindow.x1;
     unsigned int iheight = p.srcWindow.y2 - p.srcWindow.y1;
     unsigned int isize = iwidth * iheight;
     auto_ptr<ImageMemory> tmpData( new ImageMemory(sizeof(float) * isize * ( nComponents + 2 + ( (p.adaptiveRadius > 0) ? 1 : 0 ) ), this) );
     float* tmpPixelData = tmpData.get() ? (float*)tmpData->lock() : NULL;
+    if (!tmpPixelData) {
+        throwSuiteStatusException(kOfxStatErrMemory);
+    }
     float* fimgcolor[3] = { NULL, NULL, NULL };
     float* fimgalpha = NULL;
     float *fimgtmp[3] = { NULL, NULL, NULL };
-    fimgcolor[0] = (nComponents != 1) ? tmpPixelData : NULL;
-    fimgcolor[1] = (nComponents != 1) ? tmpPixelData + isize : NULL;
-    fimgcolor[2] = (nComponents != 1) ? tmpPixelData + 2 * isize : NULL;
-    fimgalpha = (nComponents == 1) ? tmpPixelData : ( (nComponents == 4) ? tmpPixelData + 3 * isize : NULL );
-    fimgtmp[0] = tmpPixelData + nComponents * isize;
-    fimgtmp[1] = tmpPixelData + (nComponents + 1) * isize;
+    fimgcolor[0] = (nComponents != 1 && tmpPixelData) ? tmpPixelData : NULL;
+    fimgcolor[1] = (nComponents != 1 && tmpPixelData) ? tmpPixelData + isize : NULL;
+    fimgcolor[2] = (nComponents != 1 && tmpPixelData) ? tmpPixelData + 2 * isize : NULL;
+    fimgalpha = (nComponents == 1 && tmpPixelData) ? tmpPixelData : ( (nComponents == 4 && tmpPixelData) ? tmpPixelData + 3 * isize : NULL );
+    fimgtmp[0] = tmpPixelData ? tmpPixelData + nComponents * isize : NULL;
+    fimgtmp[1] = tmpPixelData ? tmpPixelData + (nComponents + 1) * isize : NULL;
     if (p.adaptiveRadius > 0) {
-        fimgtmp[2] = tmpPixelData + (nComponents + 2) * isize;
+        fimgtmp[2] = tmpPixelData ? tmpPixelData + (nComponents + 2) * isize : NULL;
     }
     // - extract the color components and convert them to the appropriate color model
     //
@@ -2533,7 +2546,9 @@ DenoiseSharpenPlugin::renderForBitDepth(const RenderArguments &args)
                 // store in tmpPixelData
                 for (int c = 0; c < 3; ++c) {
                     if (!( (p.colorModel == eColorModelRGB) || (p.colorModel == eColorModelLinearRGB) ) || p.process[c]) {
-                        fimgcolor[c][pix] = unpPix[c];
+                        if (fimgcolor[c]) {
+                            fimgcolor[c][pix] = unpPix[c];
+                        }
                     }
                 }
             }
@@ -2576,44 +2591,58 @@ DenoiseSharpenPlugin::renderForBitDepth(const RenderArguments &args)
         PIX *dstPix = (PIX *) dst->getPixelAddress(procWindow.x1, y);
         for (int x = procWindow.x1; x < procWindow.x2; x++) {
             const PIX *srcPix = (const PIX *)  (src.get() ? src->getPixelAddress(x, y) : 0);
-            unsigned int pix = (x - p.srcWindow.x1) + (y - p.srcWindow.y1) * iwidth;
             float tmpPix[4] = {0., 0., 0., 1.};
-            // get values from tmpPixelData
-            if (nComponents != 3) {
-                assert(fimgalpha);
-                tmpPix[3] = fimgalpha[pix];
-            }
-            if (nComponents != 1) {
-                // store in tmpPixelData
-                for (int c = 0; c < 3; ++c) {
-                    tmpPix[c] = fimgcolor[c][pix];
+            if (!srcPix) {
+                // Ne should never reach this point, because srcWindow should always
+                // contain procWindow.
+                // see DenoiseSharphenPlugin::getRegionsOfInterest() and DenoiseSharphenPlugin::setup()
+                // In release mode, don't crash, just add black pixels.
+                //DBG_(printf("procWindow %d,%d - %d,%d\n", procWindow.x1, procWindow.y1, procWindow.x2, procWindow.y2));
+                //DBG_(printf("p.srcWindow %d,%d - %d,%d\n", p.srcWindow.x1, p.srcWindow.y1, p.srcWindow.x2, p.srcWindow.y2));
+                //DBG_(printf("src->bounds %d,%d - %d,%d\n", src->getBounds().x1, src->getBounds().y1, src->getBounds().x2, src->getBounds().y2));
+                assert(false);
+            } else {
+                assert(p.srcWindow.x1 <= x && x < p.srcWindow.x2 && p.srcWindow.y1 <= y && y < p.srcWindow.y2);
+                unsigned int pix = (x - p.srcWindow.x1) + (y - p.srcWindow.y1) * iwidth;
+                // get values from tmpPixelData
+                if (nComponents != 3) {
+                    assert(fimgalpha);
+                    tmpPix[3] = fimgalpha[pix];
                 }
-
-                if (p.colorModel == eColorModelLab) {
-                    // back from 0..1 range to normal Lab
-                    //tmpPix[0] = (tmpPix[0] - 0 * 16 * 27 / 24389.0) * 116;
-                    //tmpPix[1] = (tmpPix[1] - 0.5) * 500 * 2;
-                    //tmpPix[2] = (tmpPix[2] - 0.5) * 200 * 2.2;
-
-                    Color::lab_to_rgb709(tmpPix[0], tmpPix[1], tmpPix[2], &tmpPix[0], &tmpPix[1], &tmpPix[2]);
-                    if (sizeof(PIX) == 1.) {
-                        // convert from linear
-                        for (int c = 0; c < 3; ++c) {
-                            tmpPix[c] = _lut->toColorSpaceFloatFromLinearFloat(tmpPix[c]);
+                if (nComponents != 1) {
+                    // store in tmpPixelData
+                    for (int c = 0; c < 3; ++c) {
+                        if (fimgcolor[c]) {
+                            tmpPix[c] = fimgcolor[c][pix];
                         }
                     }
-                } else {
-                    if (p.colorModel == eColorModelYCbCr) {
-                        // bring from 0..1 to the -0.5-0.5 range
-                        //tmpPix[1] -= 0.5;
-                        //tmpPix[2] -= 0.5;
-                        Color::ypbpr_to_rgb709(tmpPix[0], tmpPix[1], tmpPix[2], &tmpPix[0], &tmpPix[1], &tmpPix[2]);
-                    }
-                    if (p.colorModel != eColorModelLinearRGB) {
-                        if (sizeof(PIX) != 1) {
-                            // convert from rec709
+
+                    if (p.colorModel == eColorModelLab) {
+                        // back from 0..1 range to normal Lab
+                        //tmpPix[0] = (tmpPix[0] - 0 * 16 * 27 / 24389.0) * 116;
+                        //tmpPix[1] = (tmpPix[1] - 0.5) * 500 * 2;
+                        //tmpPix[2] = (tmpPix[2] - 0.5) * 200 * 2.2;
+
+                        Color::lab_to_rgb709(tmpPix[0], tmpPix[1], tmpPix[2], &tmpPix[0], &tmpPix[1], &tmpPix[2]);
+                        if (sizeof(PIX) == 1.) {
+                            // convert from linear
                             for (int c = 0; c < 3; ++c) {
-                                tmpPix[c] = _lut->fromColorSpaceFloatToLinearFloat(tmpPix[c]);
+                                tmpPix[c] = _lut->toColorSpaceFloatFromLinearFloat(tmpPix[c]);
+                            }
+                        }
+                    } else {
+                        if (p.colorModel == eColorModelYCbCr) {
+                            // bring from 0..1 to the -0.5-0.5 range
+                            //tmpPix[1] -= 0.5;
+                            //tmpPix[2] -= 0.5;
+                            Color::ypbpr_to_rgb709(tmpPix[0], tmpPix[1], tmpPix[2], &tmpPix[0], &tmpPix[1], &tmpPix[2]);
+                        }
+                        if (p.colorModel != eColorModelLinearRGB) {
+                            if (sizeof(PIX) != 1) {
+                                // convert from rec709
+                                for (int c = 0; c < 3; ++c) {
+                                    tmpPix[c] = _lut->fromColorSpaceFloatToLinearFloat(tmpPix[c]);
+                                }
                             }
                         }
                     }
@@ -2669,7 +2698,12 @@ DenoiseSharpenPlugin::getRegionsOfInterest(const RegionsOfInterestArguments &arg
     }
 
     int adaptiveRadius = _adaptiveRadius->getValueAtTime(time);
-    if (adaptiveRadius <= 0) {
+    bool supportsTiles = getSupportsTiles();
+    if ( supportsTiles != (adaptiveRadius>0) ) {
+        // This warning probably corresponds to a host bug
+        DBG_(printf("DenoiseSharpen: Warning: effect should support tiles (adaptiveRadius>0) but getSupportsTiles returns false (host issue).\n"));
+    }
+    if (adaptiveRadius <= 0 || !supportsTiles) {
         // requires the full image to compute standard deviation of the signal
         rois.setRegionOfInterest(*_srcClip, srcRod);
 
@@ -2679,14 +2713,20 @@ DenoiseSharpenPlugin::getRegionsOfInterest(const RegionsOfInterestArguments &arg
     double par = _srcClip->getPixelAspectRatio();
     OfxRectI roiPixel;
     Coords::toPixelEnclosing(args.regionOfInterest, args.renderScale, par, &roiPixel);
-    int levels = kLevelMax - startLevelFromRenderScale(args.renderScale);
-    int radiusPixel = borderSize(adaptiveRadius, b3, levels);
-    roiPixel.x1 -= radiusPixel;
-    roiPixel.x2 += radiusPixel;
-    roiPixel.y1 -= radiusPixel;
-    roiPixel.y2 += radiusPixel;
+    //DBG_(printf("render canonical ROI %g,%g - %g,%g\n", args.regionOfInterest.x1, args.regionOfInterest.y1, args.regionOfInterest.x2, args.regionOfInterest.y2));
+    //DBG_(printf("render scale %g,%g\n", args.renderScale.x, args.renderScale.y));
+    //DBG_(printf("render pixel ROI %d,%d - %d,%d\n", roiPixel.x1, roiPixel.y1, roiPixel.x2, roiPixel.y2));
+
+    // Note: the following must be consistent with the end of DenoiseSharpenPlugin::setup()
+    // compute the number of levels (max is 4, which adds 1<<4 = 16 pixels on each side)
+    int maxLev = (std::max)( 0, kLevelMax - startLevelFromRenderScale(args.renderScale) );
+    int border = borderSize(adaptiveRadius, b3, maxLev + 1);
+    roiPixel.x1 -= border;
+    roiPixel.x2 += border;
+    roiPixel.y1 -= border;
+    roiPixel.y2 += border;
 #ifndef NDEBUG
-    int sc = 1 << levels;
+    int sc = 1 << (maxLev + 1);
     if (b3) {
         assert( (2 * sc - 1 + 2 * sc) < (roiPixel.x2 - roiPixel.x1) );
         assert( (2 * sc - 1 + 2 * sc) < (roiPixel.y2 - roiPixel.y1) );
@@ -2696,9 +2736,13 @@ DenoiseSharpenPlugin::getRegionsOfInterest(const RegionsOfInterestArguments &arg
     }
 #endif
     OfxRectD roi;
+    //DBG_(printf("border size %d\n", border));
+    //DBG_(printf("src pixel ROI %d,%d - %d,%d\n", roiPixel.x1, roiPixel.y1, roiPixel.x2, roiPixel.y2));
     Coords::toCanonical(roiPixel, args.renderScale, par, &roi);
+    //DBG_(printf("src canonical ROI %g,%g - %g,%g\n", roi.x1, roi.y1, roi.x2, roi.y2));
 
     Coords::rectIntersection<OfxRectD>(roi, srcRod, &roi);
+    //DBG_(printf("src canonical ROI (cropped) %g,%g - %g,%g\n", roi.x1, roi.y1, roi.x2, roi.y2));
     rois.setRegionOfInterest(*_srcClip, roi);
 
     // if analysis is locked, we do not need the analysis inputs
@@ -2920,8 +2964,8 @@ DenoiseSharpenPlugin::analyzeNoiseLevels(const InstanceChangedArgs &args)
     omp_set_num_threads( (std::max)(1u, MultiThread::getNumCPUs() ) );
 #endif
 
-    assert( kSupportsMultipleClipPARs   || !_srcClip || _srcClip->getPixelAspectRatio() == _dstClip->getPixelAspectRatio() );
-    assert( kSupportsMultipleClipDepths || !_srcClip || _srcClip->getPixelDepth()       == _dstClip->getPixelDepth() );
+    assert( kSupportsMultipleClipPARs   || !_srcClip || !_srcClip->isConnected() || _srcClip->getPixelAspectRatio() == _dstClip->getPixelAspectRatio() );
+    assert( kSupportsMultipleClipDepths || !_srcClip || !_srcClip->isConnected() || _srcClip->getPixelDepth()       == _dstClip->getPixelDepth() );
     assert(dstComponents == ePixelComponentRGBA || dstComponents == ePixelComponentRGB /*|| dstComponents == ePixelComponentXY*/ || dstComponents == ePixelComponentAlpha);
     // do the rendering
     switch (dstComponents) {
@@ -3009,20 +3053,12 @@ DenoiseSharpenPlugin::analyzeNoiseLevelsForBitDepth(const InstanceChangedArgs &a
                    _srcClip->fetchImage(time, cropRect) : 0 );
     }
     if ( src.get() ) {
-        if ( (src->getRenderScale().x != args.renderScale.x) ||
-             ( src->getRenderScale().y != args.renderScale.y) ) {
-            setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale");
-            throwSuiteStatusException(kOfxStatFailed);
-        }
+        checkBadRenderScale(src, args);
     }
     bool doMasking = _analysisMaskClip && _analysisMaskClip->isConnected();
     mask.reset(doMasking ? _analysisMaskClip->fetchImage(time, cropRect) : 0);
     if ( mask.get() ) {
-        if ( (mask->getRenderScale().x != args.renderScale.x) ||
-             ( mask->getRenderScale().y != args.renderScale.y) ) {
-            setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale");
-            throwSuiteStatusException(kOfxStatFailed);
-        }
+        checkBadRenderScale(mask, args);
     }
     if ( !src.get() ) {
         setPersistentMessage(Message::eMessageError, "", "No Source image to analyze");
@@ -3054,7 +3090,10 @@ DenoiseSharpenPlugin::analyzeNoiseLevelsForBitDepth(const InstanceChangedArgs &a
     unsigned int iheight = srcWindow.y2 - srcWindow.y1;
     unsigned int isize = iwidth * iheight;
     auto_ptr<ImageMemory> tmpData( new ImageMemory(sizeof(float) * isize * (nComponents + 3), this) );
-    float* tmpPixelData = (float*)tmpData->lock();
+    float* tmpPixelData = tmpData.get() ? (float*)tmpData->lock() : NULL;
+    if (!tmpPixelData) {
+        throwSuiteStatusException(kOfxStatErrMemory);
+    }
     float* fimgcolor[3] = { NULL, NULL, NULL };
     float* fimgalpha = NULL;
     float *fimgtmp[3] = { NULL, NULL, NULL };
@@ -3067,6 +3106,9 @@ DenoiseSharpenPlugin::analyzeNoiseLevelsForBitDepth(const InstanceChangedArgs &a
     fimgtmp[2] = tmpPixelData + (nComponents + 2) * isize;
     auto_ptr<ImageMemory> maskData( doMasking ? new ImageMemory(sizeof(bool) * isize, this) : NULL );
     bool* bimgmask = doMasking ? (bool*)maskData->lock() : NULL;
+    if (doMasking && !bimgmask) {
+        throwSuiteStatusException(kOfxStatErrMemory);
+    }
 
 
     // - extract the color components and convert them to the appropriate color model
@@ -3245,9 +3287,6 @@ DenoiseSharpenPluginFactory::describeInContext(ImageEffectDescriptor &desc,
                                                ContextEnum context)
 {
     DBG(cout << "describeInContext!\n");
-
-    const ImageEffectHostDescription &gHostDescription = *getImageEffectHostDescription();
-    gHostIsResolve = (gHostDescription.hostName.substr(0, 14) == "DaVinciResolve");  // Resolve gives bad image properties
 
     // Source clip only in the filter context
     // create the mandated source clip

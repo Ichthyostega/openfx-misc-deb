@@ -1,5 +1,5 @@
 # ***** BEGIN LICENSE BLOCK *****
-# This file is part of openfx-misc <https://github.com/devernay/openfx-misc>,
+# This file is part of openfx-misc <https://github.com/NatronGitHub/openfx-misc>,
 # Copyright (C) 2013-2018 INRIA
 #
 # openfx-misc is free software: you can redistribute it and/or modify
@@ -27,6 +27,26 @@ ENDIF(${CMAKE_SOURCE_DIR} STREQUAL ${CMAKE_BINARY_DIR})
 CMAKE_MINIMUM_REQUIRED(VERSION 3.1)
 PROJECT(OpenFXMisc CXX)
 ENABLE_TESTING()
+
+# ========================== build platform ==========================
+
+MESSAGE (STATUS "  Platform:")
+MESSAGE (STATUS "    Host:"             ${CMAKE_HOST_SYSTEM_NAME} ${CMAKE_HOST_SYSTEM_VERSION} ${CMAKE_HOST_SYSTEM_PROCESSOR})
+if(CMAKE_CROSSCOMPILING)
+  MESSAGE (STATUS "    Target:"         ${CMAKE_SYSTEM_NAME} ${CMAKE_SYSTEM_VERSION} ${CMAKE_SYSTEM_PROCESSOR})
+endif()
+MESSAGE (STATUS "    CMake:"            ${CMAKE_VERSION})
+MESSAGE (STATUS "    CMake generator:"  ${CMAKE_GENERATOR})
+MESSAGE (STATUS "    CMake build tool:" ${CMAKE_BUILD_TOOL})
+if(MSVC)
+  MESSAGE (STATUS "    MSVC:"           ${MSVC_VERSION})
+endif()
+if(CMAKE_GENERATOR MATCHES Xcode)
+  MESSAGE (STATUS "    Xcode:"          ${XCODE_VERSION})
+endif()
+if(NOT CMAKE_GENERATOR MATCHES "Xcode|Visual Studio")
+  MESSAGE (STATUS "    Configuration:"  ${CMAKE_BUILD_TYPE})
+endif()
 
 include(FindOpenGL REQUIRED)
 
@@ -489,6 +509,14 @@ endif(OPENMP_FOUND AND NOT MSVC)
 IF (MSVC)
   # Some files require this option. This breaks compatibility with older linkers.
   SET_TARGET_PROPERTIES(Misc PROPERTIES COMPILE_FLAGS "/bigobj")
+  # If the build system is at least Windows Vista (6.0),
+  # compile for Windows Vista, to get interruptible CImg plugins (see CImgFilter.h)
+  IF (NOT ${CMAKE_SYSTEM_VERSION} VERSION_LESS 6.0) # Windows Vista
+    ADD_DEFINITIONS(-D_WIN32_WINNT=0x0600 -DWINVER=0x0600)
+    MESSAGE(STATUS "CImg plugins should be interruptible")
+  ELSE ()
+    MESSAGE(STATUS "CImg plugins may not be interruptible")
+  ENDIF ()
 ENDIF ()
 
 # Find and set the arch name.

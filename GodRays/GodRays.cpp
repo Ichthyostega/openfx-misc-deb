@@ -221,19 +221,20 @@ private:
 #endif
     }
 
-    void multiThreadProcessImages(OfxRectI procWindow) OVERRIDE
+    void multiThreadProcessImages(const OfxRectI& procWindow, const OfxPointD& rs) OVERRIDE FINAL
     {
         assert(_invtransform);
         if (_motionblur == 0.) { // no motion blur
-            return multiThreadProcessImagesNoBlur(procWindow);
+            return multiThreadProcessImagesNoBlur(procWindow, rs);
         } else { // motion blur
-            return multiThreadProcessImagesMotionBlur(procWindow);
+            return multiThreadProcessImagesMotionBlur(procWindow, rs);
         }
     } // multiThreadProcessImages
 
 private:
-    void multiThreadProcessImagesNoBlur(const OfxRectI &procWindow)
+    void multiThreadProcessImagesNoBlur(const OfxRectI &procWindow, const OfxPointD& rs)
     {
+        unused(rs);
         float tmpPix[nComponents];
         const Matrix3x3 & H = _invtransform[0];
 
@@ -281,8 +282,9 @@ private:
         }
     }
 
-    void multiThreadProcessImagesMotionBlur(const OfxRectI &procWindow)
+    void multiThreadProcessImagesMotionBlur(const OfxRectI &procWindow, const OfxPointD& rs)
     {
+        unused(rs);
         float tmpPix[nComponents];
 
 #ifndef USE_STEPS
@@ -848,6 +850,7 @@ GodRaysPlugin::setupAndProcess(GodRaysProcessorBase &processor,
     if ( !dst.get() ) {
         throwSuiteStatusException(kOfxStatFailed);
     }
+# ifndef NDEBUG
     BitDepthEnum dstBitDepth    = dst->getPixelDepth();
     PixelComponentEnum dstComponents  = dst->getPixelComponents();
     if ( ( dstBitDepth != _dstClip->getPixelDepth() ) ||
@@ -855,12 +858,8 @@ GodRaysPlugin::setupAndProcess(GodRaysProcessorBase &processor,
         setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong depth or components");
         throwSuiteStatusException(kOfxStatFailed);
     }
-    if ( (dst->getRenderScale().x != args.renderScale.x) ||
-         ( dst->getRenderScale().y != args.renderScale.y) ||
-         ( ( ( dst->getField() != eFieldNone) /* for DaVinci Resolve */ && ( dst->getField() != args.fieldToRender) ) ) ) {
-        setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-        throwSuiteStatusException(kOfxStatFailed);
-    }
+    checkBadRenderScaleOrField(dst, args);
+# endif
     auto_ptr<const Image> src( ( _srcClip && _srcClip->isConnected() ) ?
                                     _srcClip->fetchImage(args.time) : 0 );
     size_t invtransformsizealloc = 0;
@@ -888,6 +887,7 @@ GodRaysPlugin::setupAndProcess(GodRaysProcessorBase &processor,
         invtransform[0](2,1) = 0.;
         invtransform[0](2,2) = 1.;
     } else {
+#     ifndef NDEBUG
         BitDepthEnum dstBitDepth       = dst->getPixelDepth();
         PixelComponentEnum dstComponents  = dst->getPixelComponents();
         BitDepthEnum srcBitDepth      = src->getPixelDepth();
@@ -895,7 +895,7 @@ GodRaysPlugin::setupAndProcess(GodRaysProcessorBase &processor,
         if ( (srcBitDepth != dstBitDepth) || (srcComponents != dstComponents) ) {
             throwSuiteStatusException(kOfxStatFailed);
         }
-
+#     endif
         bool invert = false;
         if (_invert) {
             _invert->getValueAtTime(time, invert);
@@ -996,7 +996,7 @@ GodRaysPlugin::setupAndProcess(GodRaysProcessorBase &processor,
 #endif
 
     // set the render window
-    processor.setRenderWindow(args.renderWindow);
+    processor.setRenderWindow(args.renderWindow, args.renderScale);
     assert(invtransform.size() && invtransformsize);
     processor.setValues(&invtransform.front(),
                         invtransformsize,
@@ -1131,8 +1131,8 @@ GodRaysPlugin::render(const RenderArguments &args)
     BitDepthEnum dstBitDepth    = _dstClip->getPixelDepth();
     PixelComponentEnum dstComponents  = _dstClip->getPixelComponents();
 
-    assert( kSupportsMultipleClipPARs   || !_srcClip || _srcClip->getPixelAspectRatio() == _dstClip->getPixelAspectRatio() );
-    assert( kSupportsMultipleClipDepths || !_srcClip || _srcClip->getPixelDepth()       == _dstClip->getPixelDepth() );
+    assert( kSupportsMultipleClipPARs   || !_srcClip || !_srcClip->isConnected() || _srcClip->getPixelAspectRatio() == _dstClip->getPixelAspectRatio() );
+    assert( kSupportsMultipleClipDepths || !_srcClip || !_srcClip->isConnected() || _srcClip->getPixelDepth()       == _dstClip->getPixelDepth() );
     assert(OFX_COMPONENTS_OK(dstComponents));
     if (dstComponents == ePixelComponentRGBA) {
         renderInternal<4>(args, dstBitDepth);

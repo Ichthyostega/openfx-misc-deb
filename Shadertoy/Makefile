@@ -11,12 +11,15 @@ net.sf.openfx.Shadertoy.svg \
 OSMESA_PATH ?= /opt/osmesa
 LLVM_PATH ?= /opt/llvm
 
-## Enable these if you installed a mangled OSMesa (preferably with 32 bits FP support)
-#CXXFLAGS_MESA += -DHAVE_OSMESA
-#LDFLAGS_MESA += -L$(OSMESA_PATH)/lib -lMangledOSMesa32 `$(LLVM_PATH)/bin/llvm-config --ldflags --libs engine mcjit mcdisassembler --system-libs`
+ifeq ($(OSMESA),1)
+  ## Enable these if you installed a mangled OSMesa (preferably with 32 bits FP support)
+  CXXFLAGS_MESA += -I$(OSMESA_PATH)/include
+  CXXFLAGS_EXTRA += -DHAVE_OSMESA
+  LDFLAGS_MESA += -L$(OSMESA_PATH)/lib -lMangledOSMesa32 -lz `$(LLVM_PATH)/bin/llvm-config --ldflags --libs engine mcjit mcdisassembler --system-libs`
+endif
 
-CXXFLAGS_EXTRA = $(CXXFLAGS_MESA)
-LDFLAGS_EXTRA = $(LDFLAGS_MESA)
+#CXXFLAGS_EXTRA += $(CXXFLAGS_MESA) # only added when building ShadertoyRenderMesa.o
+LDFLAGS_EXTRA += $(LDFLAGS_MESA)
 
 TOP_SRCDIR = ..
 include $(TOP_SRCDIR)/Makefile.master
@@ -30,7 +33,7 @@ $(OBJECTPATH)/ShadertoyRenderGL.o: ShadertoyRenderGL.cpp ShadertoyRender.h Shade
 
 $(OBJECTPATH)/ShadertoyRenderMesa.o: ShadertoyRenderMesa.cpp ShadertoyRender.h Shadertoy.h
 	@mkdir -p $(OBJECTPATH)
-	$(AM_V_CXX)$(CXX) -c -I$(OSMESA_PATH)/include $(CXXFLAGS) $< -o $@
+	$(AM_V_CXX)$(CXX) -c $(CXXFLAGS) $(CXXFLAGS_MESA) $< -o $@
 
 presets/tex00.jpg:
 	$(MAKE) -C presets

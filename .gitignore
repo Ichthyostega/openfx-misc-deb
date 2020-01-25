@@ -175,11 +175,6 @@ Desktop.ini
 # Recycle Bin used on file shares
 $RECYCLE.BIN/
 
-CImg/CImg.h
-CImg/Inpaint/inpaint.h
-CImg/gmic.h
-CImg/gmic.cpp
-CImg/gmic_def.h
 ofxTestLog.txt
 
 # QtCreator user files

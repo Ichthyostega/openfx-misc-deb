@@ -45,7 +45,7 @@ OFXS_NAMESPACE_ANONYMOUS_ENTER
     "caused by the reflected color of the bluescreen/greenscreen.\n" \
     "While a despill operation often only removes green (for greenscreens) this despill also enables adding red and blue to the spill area. " \
     "A lot of Keyers already have implemented their own despill methods. " \
-    "However, in a lot of cases it is useful to seperate the keying process in 2 tasks to get more control over the final result. " \
+    "However, in a lot of cases it is useful to separate the keying process in 2 tasks to get more control over the final result. " \
     "Normally these tasks are the generation of the alpha mask and the spill correction. " \
     "The generated alpha Mask (Key) is then used to merge the despilled forground over the new background.\n" \
     "This effect is based on the unspill operations described in section 4.5 of \"Digital Compositing for Film and Video\" by Steve Wright (Focal Press)."
@@ -217,6 +217,7 @@ DespillProcessorBase::clamp<float>(float value,
                                    int maxValue) const
 {
     assert(maxValue == 1.);
+    unused(maxValue);
     if ( _clampBlack && (value < 0.) ) {
         value = 0.f;
     } else if ( _clampWhite && (value > 1.0) ) {
@@ -232,6 +233,7 @@ DespillProcessorBase::clamp<float>(double value,
                                    int maxValue) const
 {
     assert(maxValue == 1.);
+    unused(maxValue);
     if ( _clampBlack && (value < 0.) ) {
         value = 0.f;
     } else if ( _clampWhite && (value > 1.0) ) {
@@ -260,8 +262,9 @@ public:
 
 private:
 
-    void multiThreadProcessImages(OfxRectI procWindow)
+    void multiThreadProcessImages(const OfxRectI& procWindow, const OfxPointD& rs) OVERRIDE FINAL
     {
+        unused(rs);
         float tmpPix[4];
 
         assert(nComponents == 3 || nComponents == 4);
@@ -342,6 +345,7 @@ public:
         , _blueScale(NULL)
         , _brightness(NULL)
     {
+
         _dstClip = fetchClip(kOfxImageEffectOutputClipName);
         assert( _dstClip && (!_dstClip->isConnected() || _dstClip->getPixelComponents() == ePixelComponentRGB ||
                              _dstClip->getPixelComponents() == ePixelComponentRGBA) );
@@ -426,6 +430,7 @@ DespillPlugin::setupAndProcess(DespillProcessorBase &processor,
         setPersistentMessage(Message::eMessageError, "", "Failed to fetch output image");
         throwSuiteStatusException(kOfxStatFailed);
     }
+# ifndef NDEBUG
     BitDepthEnum dstBitDepth    = dst->getPixelDepth();
     PixelComponentEnum dstComponents  = dst->getPixelComponents();
     if ( ( dstBitDepth != _dstClip->getPixelDepth() ) ||
@@ -433,28 +438,20 @@ DespillPlugin::setupAndProcess(DespillProcessorBase &processor,
         setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong depth or components");
         throwSuiteStatusException(kOfxStatFailed);
     }
-    if ( (dst->getRenderScale().x != args.renderScale.x) ||
-         ( dst->getRenderScale().y != args.renderScale.y) ||
-         ( ( dst->getField() != eFieldNone) /* for DaVinci Resolve */ && ( dst->getField() != args.fieldToRender) ) ) {
-        setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-        throwSuiteStatusException(kOfxStatFailed);
-    }
+    checkBadRenderScaleOrField(dst, args);
+# endif
     auto_ptr<const Image> src( ( _srcClip && _srcClip->isConnected() ) ?
                                     _srcClip->fetchImage(time) : 0 );
-
     if ( src.get() ) {
-        if ( (src->getRenderScale().x != args.renderScale.x) ||
-             ( src->getRenderScale().y != args.renderScale.y) ||
-             ( ( src->getField() != eFieldNone) /* for DaVinci Resolve */ && ( src->getField() != args.fieldToRender) ) ) {
-            setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-            throwSuiteStatusException(kOfxStatFailed);
-        }
+#     ifndef NDEBUG
+        checkBadRenderScaleOrField(src, args);
         BitDepthEnum srcBitDepth      = src->getPixelDepth();
         PixelComponentEnum srcComponents  = src->getPixelComponents();
         //PixelComponentEnum srcComponents = src->getPixelComponents();
         if ( (srcBitDepth != dstBitDepth) || (srcComponents != dstComponents) ) { // Keyer outputs RGBA but may have RGB input
             throwSuiteStatusException(kOfxStatErrImageFormat);
         }
+#     endif
     } else {
         setPersistentMessage(Message::eMessageError, "", "Failed to fetch source image");
         throwSuiteStatusException(kOfxStatFailed);
@@ -464,12 +461,7 @@ DespillPlugin::setupAndProcess(DespillProcessorBase &processor,
     bool doMasking = ( ( !_maskApply || _maskApply->getValueAtTime(time) ) && _maskClip && _maskClip->isConnected() );
     auto_ptr<const Image> mask(doMasking ? _maskClip->fetchImage(time) : 0);
     if ( mask.get() ) {
-        if ( (mask->getRenderScale().x != args.renderScale.x) ||
-             ( mask->getRenderScale().y != args.renderScale.y) ||
-             ( ( mask->getField() != eFieldNone) /* for DaVinci Resolve */ && ( mask->getField() != args.fieldToRender) ) ) {
-            setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-            throwSuiteStatusException(kOfxStatFailed);
-        }
+        checkBadRenderScaleOrField(mask, args);
     }
 
 
@@ -501,16 +493,18 @@ DespillPlugin::setupAndProcess(DespillProcessorBase &processor,
     _mix->getValue(mix);
 
 
+# ifndef NDEBUG
     if ( outputAlpha && (dst->getPixelComponentCount() != 4) ) {
         setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
         throwSuiteStatusException(kOfxStatFailed);
     }
+# endif
 
 
     processor.setValues(spillMix, spillExpand, redScale, greenScale, blueScale, brightNess, clampBlack, clampWhite, (float)mix, outputAlpha);
 
     // set the render window
-    processor.setRenderWindow(args.renderWindow);
+    processor.setRenderWindow(args.renderWindow, args.renderScale);
 
     // Call the base class process member, this will call the derived templated process code
     processor.process();

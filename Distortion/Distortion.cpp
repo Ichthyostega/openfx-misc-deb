@@ -50,6 +50,9 @@
 #include <limits>
 
 #ifdef __APPLE__
+#ifndef GL_SILENCE_DEPRECATION
+#define GL_SILENCE_DEPRECATION // Yes, we are still doing OpenGL 2.1
+#endif
 #include <OpenGL/gl.h>
 #else
 #ifdef _WIN32
@@ -309,7 +312,7 @@ enum DistortionModelEnum
 
 
 #define kParamDistortionDirection "direction"
-#define kParamDistortionDirectionLabel "Direction", "Should the output corrspond to applying or to removing distortion."
+#define kParamDistortionDirectionLabel "Direction", "Should the output correspond to applying or to removing distortion."
 #define kParamDistortionDirectionOptionDistort "Distort", "The output corresponds to applying distortion."
 #define kParamDistortionDirectionOptionUndistort "Undistort", "The output corresponds to removing distortion."
 
@@ -604,7 +607,7 @@ PFBarrelCommon::FileReader::FileReader(const std::string &filename)
     } else if (ln=="#PFBarrel 2011 v2") {
         version_= 2;
     } else {
-        error_= "Bad header";
+        error_= "Bad header: " + ln;
         return;
     }
 
@@ -697,11 +700,12 @@ std::string PFBarrelCommon::FileReader::readRawLine(void)
     char* s = std::fgets(buf, sizeof(buf) - 1, f_);
     if (s != NULL) {
         rv= s;
-        rv= rv.erase(rv.length()-1);
+        // trim \r and \n from the end of line
+        while (!rv.empty() && (rv[rv.size() - 1] == '\r' || rv[rv.size() - 1] == '\n'))
+            rv.erase(rv.size() - 1);
     } else {
         error_= "Parse error";
     }
-
     return rv;
 }
 
@@ -927,13 +931,14 @@ private:
         }
     }
 
-    void multiThreadProcessImages(OfxRectI procWindow);
+    void multiThreadProcessImages(const OfxRectI& procWindow, const OfxPointD& rs) OVERRIDE FINAL;
 };
 
 template <class PIX, int nComponents, int maxValue, DistortionPluginEnum plugin, FilterEnum filter, bool clamp>
 void
-DistortionProcessor<PIX, nComponents, maxValue, plugin, filter, clamp>::multiThreadProcessImages(OfxRectI procWindow)
+DistortionProcessor<PIX, nComponents, maxValue, plugin, filter, clamp>::multiThreadProcessImages(const OfxRectI& procWindow, const OfxPointD& rs)
 {
+    unused(rs);
     assert(nComponents == 1 || nComponents == 3 || nComponents == 4);
     assert(_dstImg);
     assert(!(plugin == eDistortionPluginSTMap || plugin == eDistortionPluginIDistort) || _planeChannels.size() == 3);
@@ -1269,6 +1274,7 @@ public:
         , _maskInvert(NULL)
         , _plugin(plugin)
     {
+
         _dstClip = fetchClip(kOfxImageEffectOutputClipName);
         assert( _dstClip && (!_dstClip->isConnected() || _dstClip->getPixelComponents() == ePixelComponentRGB ||
                              _dstClip->getPixelComponents() == ePixelComponentRGBA ||
@@ -2111,6 +2117,7 @@ DistortionPlugin::getDistortionModel(const OfxRectD& format, const OfxPointD& re
 
     }
     assert(false);
+    return NULL;
 }
 
 // returns true if fixed format (i.e. not the input RoD) and setFormat can be called in getClipPrefs
@@ -2228,6 +2235,7 @@ DistortionPlugin::setupAndProcess(DistortionProcessorBase &processor,
     if ( !dst.get() ) {
         throwSuiteStatusException(kOfxStatFailed);
     }
+# ifndef NDEBUG
     BitDepthEnum dstBitDepth    = dst->getPixelDepth();
     PixelComponentEnum dstComponents  = dst->getPixelComponents();
     if ( ( dstBitDepth != _dstClip->getPixelDepth() ) ||
@@ -2235,30 +2243,23 @@ DistortionPlugin::setupAndProcess(DistortionProcessorBase &processor,
         setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong depth or components");
         throwSuiteStatusException(kOfxStatFailed);
     }
-    if ( (dst->getRenderScale().x != args.renderScale.x) ||
-         ( dst->getRenderScale().y != args.renderScale.y) ||
-         ( ( dst->getField() != eFieldNone) /* for DaVinci Resolve */ && ( dst->getField() != args.fieldToRender) ) ) {
-        setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-        throwSuiteStatusException(kOfxStatFailed);
-    }
+    checkBadRenderScaleOrField(dst, args);
+# endif
 
     OutputModeEnum outputMode = _outputMode ? (OutputModeEnum)_outputMode->getValue() : eOutputModeImage;
 
     auto_ptr<const Image> src( ( (outputMode == eOutputModeImage) && _srcClip && _srcClip->isConnected() ) ?
                                     _srcClip->fetchImage(time) : 0 );
+# ifndef NDEBUG
     if ( src.get() ) {
-        if ( (src->getRenderScale().x != args.renderScale.x) ||
-            ( src->getRenderScale().y != args.renderScale.y) ||
-            ( ( src->getField() != eFieldNone) /* for DaVinci Resolve */ && ( src->getField() != args.fieldToRender) ) ) {
-            setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-            throwSuiteStatusException(kOfxStatFailed);
-        }
+        checkBadRenderScaleOrField(src, args);
         BitDepthEnum srcBitDepth      = src->getPixelDepth();
         PixelComponentEnum srcComponents = src->getPixelComponents();
         if ( (srcBitDepth != dstBitDepth) || (srcComponents != dstComponents) ) {
             throwSuiteStatusException(kOfxStatErrImageFormat);
         }
     }
+# endif
 
     InputImagesHolder_RAII imagesHolder;
     std::vector<InputPlaneChannel> planeChannels;
@@ -2305,19 +2306,16 @@ DistortionPlugin::setupAndProcess(DistortionProcessorBase &processor,
                 }
 
                 if (p.img) {
-                    if ( (p.img->getRenderScale().x != args.renderScale.x) ||
-                        ( p.img->getRenderScale().y != args.renderScale.y) ||
-                        ( ( p.img->getField() != eFieldNone) /* for DaVinci Resolve */ && ( p.img->getField() != args.fieldToRender) ) ) {
-                        setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-                        throwSuiteStatusException(kOfxStatFailed);
-                    }
+                    checkBadRenderScaleOrField(p.img, args);
                     if (srcBitDepth == eBitDepthNone) {
                         srcBitDepth = p.img->getPixelDepth();
                     } else {
+#                     ifndef NDEBUG
                         // both input must have the same bit depth and components
                         if ( (srcBitDepth != eBitDepthNone) && ( srcBitDepth != p.img->getPixelDepth() ) ) {
                             throwSuiteStatusException(kOfxStatErrImageFormat);
                         }
+#                     endif
                     }
                     // If the channel is unavailabe in the image, fill with 0 (1 for Alpha)
                     // This may happen if the user selected  the hard-coded Alpha channel and the input is RGB
@@ -2356,12 +2354,7 @@ DistortionPlugin::setupAndProcess(DistortionProcessorBase &processor,
             PixelComponentEnum uvComponents = ePixelComponentNone;
             if (uv) {
                 imagesHolder.appendImage(uv);
-                if ( (uv->getRenderScale().x != args.renderScale.x) ||
-                    ( uv->getRenderScale().y != args.renderScale.y) ||
-                    ( ( uv->getField() != eFieldNone) /* for DaVinci Resolve */ && ( uv->getField() != args.fieldToRender) ) ) {
-                    setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-                    throwSuiteStatusException(kOfxStatFailed);
-                }
+                checkBadRenderScaleOrField(uv, args);
                 BitDepthEnum uvBitDepth      = uv->getPixelDepth();
                 uvComponents = uv->getPixelComponents();
                 // only eBitDepthFloat is supported for now (other types require special processing for uv values)
@@ -2404,12 +2397,7 @@ DistortionPlugin::setupAndProcess(DistortionProcessorBase &processor,
     // do we do masking
     if (doMasking) {
         if ( mask.get() ) {
-            if ( (mask->getRenderScale().x != args.renderScale.x) ||
-                 ( mask->getRenderScale().y != args.renderScale.y) ||
-                 ( ( mask->getField() != eFieldNone) /* for DaVinci Resolve */ && ( mask->getField() != args.fieldToRender) ) ) {
-                setPersistentMessage(Message::eMessageError, "", "OFX Host gave image with wrong scale or field properties");
-                throwSuiteStatusException(kOfxStatFailed);
-            }
+            checkBadRenderScaleOrField(mask, args);
         }
         bool maskInvert = _maskInvert->getValueAtTime(time);
         processor.doMasking(true);
@@ -2420,7 +2408,7 @@ DistortionPlugin::setupAndProcess(DistortionProcessorBase &processor,
     processor.setDstImg( dst.get() );
     processor.setSrcImgs( src.get() );
     // set the render window
-    processor.setRenderWindow(args.renderWindow);
+    processor.setRenderWindow(args.renderWindow, args.renderScale);
 
     bool processR = _processR->getValueAtTime(time);
     bool processG = _processG->getValueAtTime(time);
@@ -2634,8 +2622,8 @@ DistortionPlugin::render(const RenderArguments &args)
     BitDepthEnum dstBitDepth    = _dstClip->getPixelDepth();
     PixelComponentEnum dstComponents  = _dstClip->getPixelComponents();
 
-    assert( kSupportsMultipleClipPARs   || !_srcClip || _srcClip->getPixelAspectRatio() == _dstClip->getPixelAspectRatio() );
-    assert( kSupportsMultipleClipDepths || !_srcClip || _srcClip->getPixelDepth()       == _dstClip->getPixelDepth() );
+    assert( kSupportsMultipleClipPARs   || !_srcClip || !_srcClip->isConnected() || _srcClip->getPixelAspectRatio() == _dstClip->getPixelAspectRatio() );
+    assert( kSupportsMultipleClipDepths || !_srcClip || !_srcClip->isConnected() || _srcClip->getPixelDepth()       == _dstClip->getPixelDepth() );
     assert(OFX_COMPONENTS_OK(dstComponents));
     if (dstComponents == ePixelComponentRGBA) {
         switch (_plugin) {
@@ -3257,8 +3245,13 @@ DistortionPlugin::changedParam(const InstanceChangedArgs &args,
         } else if ( (paramName == kParamPFFileReload) ||
             ( (paramName == kParamPFFile) && (args.reason == eChangeUserEdit) ) ) {
             std::string filename;
+            _pfFile->getValueAtTime(args.time, filename);
             PFBarrelCommon::FileReader f(filename);
-
+            if ( !f.error_.empty() ) {
+                // no persistent message, since this is triggered by a used action
+                sendMessage(Message::eMessageError, "", "Error reading file \"" + filename + "\": " + f.error_);
+                throwSuiteStatusException(kOfxStatFailed);
+            }
             beginEditBlock(kParamPFFile);
             _pfC3->deleteAllKeys();
             _pfC5->deleteAllKeys();

@@ -93,7 +93,7 @@ grouping).
 ### Color
 
 * ClampOFX: Clamp values to a given interval.
-* ColorCorrectOFX: Adjusts the saturation, constrast, gamma, gain and offset of an image.
+* ColorCorrectOFX: Adjusts the saturation, contrast, gamma, gain and offset of an image.
 * ColorLookupOFX: Apply a parametric lookup curve to each channel separately. 
 * ColorSuppress: Remove a color/tint, or create a mask from that color.
 * EqualizeCImg: Equalize the histogram.
@@ -204,7 +204,7 @@ These plugins are compatible with the Sony Vegas and Nuke [multiview extensions]
 ### Other
 
 * ImageStatisticsOFX: Compute statistics over an image or a rectangular area.
-* NoOpOFX: Copies the input to the ouput. Useful for inspecting the properties of input and output clips.
+* NoOpOFX: Copies the input to the output. Useful for inspecting the properties of input and output clips.
 * TestRenderOFX: Test some rendering features of the OFX host.
 
 Notes & Caveats
@@ -256,7 +256,7 @@ We should take the code from FrameBlend, simplify, and incorporate it in Retime.
 Installation
 ------------
 
-These plugins are included in the binary distributions of [Natron](http://natron.fr).
+These plugins are included in the binary distributions of [Natron](https://natrongithub.github.io/).
 
 If you want to compile the plugins from source, you may either use the
 provided Unix Makefile, the Xcode project, or the Visual Studio project.
