@@ -1,4 +1,4 @@
-01_plugins-path.diff
+Plugin-path-OFX.patch
 CImg--no-downloads-please.patch
-provide-CImg-2.3.3.patch
+provide-CImg-2.8.2.patch
 CImg-make-Inpaint-abortable.patch
