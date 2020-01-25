@@ -1,3 +1,15 @@
+openfx-misc-natron (2.3.15~rc14+libs-1~buster) Lumiera-buster-tool; urgency=low
+
+  * New Upstream Release (actually RC14 for Natron 2.3.15).
+  * packaged with git-buildpackage including git-submodules.
+  * add myself as maintainer, add DEB packaging git URL
+  * improve package description, sumarise the provided plugins
+  * bump standard version 4.1.2 -> 4.5.0 (no changes required)
+  * debhelper/compat-level 11
+  * Rebuild for use on Debian/Buster(stable).
+
+ -- Hermann Vosseler <deb@ichthyostega.de>  Sat, 25 Jan 2020 16:42:55 +0100
+
 openfx-misc-natron-dmo (2.3.14-dmo1.2~buster) Lumiera-buster-tool; urgency=low
 
   * Rebuild for use on Debian/Buster(stable)
