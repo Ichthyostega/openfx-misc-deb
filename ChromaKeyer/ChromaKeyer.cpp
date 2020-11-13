@@ -181,7 +181,7 @@ protected:
     const Image *_bgImg;
     const Image *_inMaskImg;
     const Image *_outMaskImg;
-    OfxRGBColourD _keyColor;
+    OfxRGBColourF _keyColor;
     const Color::Lut* _lut;
     void (*_to_ypbpr)(float r,
                       float g,
@@ -246,7 +246,7 @@ public:
         _outMaskImg = outMaskImg;
     }
 
-    void setValues(const OfxRGBColourD& keyColor,
+    void setValues(const OfxRGBColourF& keyColor,
                    YPbPrColorspaceEnum colorspace,
                    bool linear,
                    double acceptanceAngle,
@@ -504,8 +504,8 @@ private:
                             fgcb = 0;
                             fgcr = 0;
                         } else {
-                            fgcb = fgcb - Kfg * _cosKey / 2;
-                            fgcr = fgcr - Kfg * _sinKey / 2;
+                            fgcb = static_cast<float>(fgcb - Kfg * _cosKey / 2);
+                            fgcr = static_cast<float>(fgcr - Kfg * _sinKey / 2);
                             fgcb = (std::max)( -0.5f, (std::min)(fgcb, 0.5f) );
                             fgcr = (std::max)( -0.5f, (std::min)(fgcr, 0.5f) );
                             //assert(-0.5 <= fgcb && fgcb <= 0.5);
@@ -518,7 +518,7 @@ private:
                         // [FD] the luminance is already normalized
 
                         // Y' = Y - y*Kfg, where y is such that Y' = 0 for the key color.
-                        fgy = fgy - _ys * Kfg;
+                        fgy = static_cast<float>(fgy - _ys * Kfg);
                         if (fgy < 0) {
                             fgy = fgr = fgg = fgb = 0;
                         } else {
@@ -759,8 +759,12 @@ ChromaKeyerPlugin::setupAndProcess(ChromaKeyerProcessorBase &processor,
         checkBadRenderScaleOrField(outMask, args);
     }
 
-    OfxRGBColourD keyColor;
-    _keyColor->getValueAtTime(time, keyColor.r, keyColor.g, keyColor.b);
+    double keyColorr, keyColorg, keyColorb;
+    _keyColor->getValueAtTime(time, keyColorr, keyColorg, keyColorb);
+    OfxRGBColourF keyColorF;
+    keyColorF.r = static_cast<float>(keyColorr);
+    keyColorF.g = static_cast<float>(keyColorg);
+    keyColorF.b = static_cast<float>(keyColorb);
     double acceptanceAngle = _acceptanceAngle->getValueAtTime(time);
     double suppressionAngle = _suppressionAngle->getValueAtTime(time);
     double keyLift = _keyLift->getValueAtTime(time);
@@ -769,7 +773,7 @@ ChromaKeyerPlugin::setupAndProcess(ChromaKeyerProcessorBase &processor,
     SourceAlphaEnum sourceAlpha = (SourceAlphaEnum)_sourceAlpha->getValueAtTime(time);
     YPbPrColorspaceEnum colorspace = (YPbPrColorspaceEnum)_colorspace->getValueAtTime(time);
     bool linear = _linear->getValueAtTime(time);
-    processor.setValues(keyColor, colorspace, linear, acceptanceAngle, suppressionAngle, keyLift, keyGain, outputMode, sourceAlpha);
+    processor.setValues(keyColorF, colorspace, linear, acceptanceAngle, suppressionAngle, keyLift, keyGain, outputMode, sourceAlpha);
     processor.setDstImg( dst.get() );
     processor.setSrcImgs( src.get(), bg.get(), inMask.get(), outMask.get() );
     processor.setRenderWindow(args.renderWindow, args.renderScale);

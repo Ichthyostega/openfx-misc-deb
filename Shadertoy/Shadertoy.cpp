@@ -20,7 +20,7 @@
  * OFX Shadertoy plugin.
  *
  * References:
- * https://www.shadertoy.com (v0.8.8 https://www.shadertoy.com/changelog)
+ * https://www.shadertoy.com (v0.8.8 https://www.shadertoy.com/about)
  * http://www.iquilezles.org/apps/shadertoy/index2.html (original Shader Toy v0.4)
  * https://shadertoyunofficial.wordpress.com/2016/07/22/compatibility-issues-in-shadertoy-webglsl/#webgl2
  *
@@ -358,11 +358,11 @@ namespace Shadertoy {
 #define kPluginDescriptionMarkdown \
     "Apply a [Shadertoy](http://www.shadertoy.com) fragment shader.\n" \
     "\n" \
-    "This plugin implements [Shadertoy 0.8.8](https://www.shadertoy.com/changelog), but multipass shaders and sound are not supported. Some multipass shaders can still be implemented by chaining several Shadertoy nodes, one for each pass.\n" \
+    "This plugin implements [Shadertoy 0.8.8](https://www.shadertoy.com/about), but multipass shaders and sound are not supported. Some multipass shaders can still be implemented by chaining several Shadertoy nodes, one for each pass.\n" \
     "\n" \
-    "[Shadertoy 0.8.8](https://www.shadertoy.com/changelog) uses WebGL 1.0 (a.k.a. [GLSL ES 1.0](https://www.khronos.org/registry/OpenGL/specs/es/2.0/GLSL_ES_Specification_1.00.pdf) from GLES 2.0), based on [GLSL 1.20](https://www.khronos.org/registry/OpenGL/specs/gl/GLSLangSpec.1.20.pdf)\n" \
+    "[Shadertoy 0.8.8](https://www.shadertoy.com/about) uses WebGL 1.0 (a.k.a. [GLSL ES 1.0](https://www.khronos.org/registry/OpenGL/specs/es/2.0/GLSL_ES_Specification_1.00.pdf) from GLES 2.0), based on [GLSL 1.20](https://www.khronos.org/registry/OpenGL/specs/gl/GLSLangSpec.1.20.pdf)\n" \
     "\n" \
-    "Note that the more recent [Shadertoy 0.9.1](https://www.shadertoy.com/changelog) uses WebGL 2.0 (a.k.a. [GLSL ES 3.0](https://www.khronos.org/registry/OpenGL/specs/es/3.0/GLSL_ES_Specification_3.00.pdf) from GLES 3.0), based on [GLSL 3.3](https://www.khronos.org/registry/OpenGL/specs/gl/GLSLangSpec.3.30.pdf)\n" \
+    "Note that the more recent [Shadertoy 0.9.1](https://www.shadertoy.com/about) uses WebGL 2.0 (a.k.a. [GLSL ES 3.0](https://www.khronos.org/registry/OpenGL/specs/es/3.0/GLSL_ES_Specification_3.00.pdf) from GLES 3.0), based on [GLSL 3.3](https://www.khronos.org/registry/OpenGL/specs/gl/GLSLangSpec.3.30.pdf)\n" \
     "\n" \
     "This help only covers the parts of GLSL ES that are relevant for Shadertoy. For the complete specification please have a look at [GLSL ES 1.0 specification](https://www.khronos.org/registry/OpenGL/specs/es/2.0/GLSL_ES_Specification_1.00.pdf) or pages 3 and 4 of the [OpenGL ES 2.0 quick reference card](https://www.khronos.org/opengles/sdk/docs/reference_cards/OpenGL-ES-2_0-Reference-card.pdf).\n" \
     "See also the [Shadertoy/GLSL tutorial](https://www.shadertoy.com/view/Md23DV).\n" \
@@ -1047,6 +1047,7 @@ ShadertoyPlugin::ShadertoyPlugin(OfxImageEffectHandle handle)
     , _imageShaderFileName(NULL)
     , _imageShaderPresetDir(NULL)
     , _imageShaderPreset(NULL)
+    , _imageShaderPresetString(NULL)
     , _imageShaderSource(NULL)
     , _imageShaderCompile(NULL)
     , _imageShaderTriggerRender(NULL)
@@ -1151,6 +1152,7 @@ ShadertoyPlugin::ShadertoyPlugin(OfxImageEffectHandle handle)
     if ( paramExists(kParamImageShaderPresetDir) ) {
         _imageShaderPresetDir = fetchStringParam(kParamImageShaderPresetDir);
         _imageShaderPreset = fetchChoiceParam(kParamImageShaderPreset);
+        _imageShaderPresetString = fetchStringParam(kNatronOfxParamStringSublabelName);
     }
     _imageShaderSource = fetchStringParam(kParamImageShaderSource);
     _imageShaderCompile = fetchPushButtonParam(kParamImageShaderCompile);
@@ -2098,6 +2100,7 @@ ShadertoyPlugin::changedParam(const InstanceChangedArgs &args,
         for (std::vector<ShadertoyPlugin::Preset>::iterator it = _presets.begin(); it != _presets.end(); ++it) {
             _imageShaderPreset->appendOption(it->description, it->filename);
         }
+        _imageShaderPresetString->setValue("");
     } else if (paramName == kParamImageShaderPreset) {
         int preset = _imageShaderPreset->getValue() - 1;
         if ( preset >= 0 && preset < (int)_presets.size() ) {
@@ -2116,6 +2119,14 @@ ShadertoyPlugin::changedParam(const InstanceChangedArgs &args,
                                std::istreambuf_iterator<char>() );
                     _imageShaderSource->setValue(str);
                 }
+                std::string label;
+                _imageShaderPreset->getOption(preset + 1, label);
+                // keep only the preset name
+                std::size_t found = label.rfind('/');
+                if (found != std::string::npos) {
+                    label = label.substr(found+1);
+                }
+                _imageShaderPresetString->setValue(label);
             }
             // same as kParamImageShaderCompile below, except ask for param update
             {
@@ -2177,6 +2188,9 @@ ShadertoyPlugin::changedParam(const InstanceChangedArgs &args,
         _imageShaderCompile->setEnabled(true);
         if (args.reason == eChangeUserEdit) {
             _imageShaderPreset->setValue(0);
+            if (_imageShaderPresetString) {
+                _imageShaderPresetString->setValue("");
+            }
         }
     } else if ( ( (paramName == kParamCount) ||
                   starts_with(paramName, kParamName) ) && (args.reason == eChangeUserEdit) ) {
@@ -2741,6 +2755,16 @@ ShadertoyPluginFactory::describeInContext(ImageEffectDescriptor &desc,
             }
             if (group) {
                 param->setParent(*group);
+            }
+        }
+        // imageShaderPresetString
+        if ( !gPresetsDefault.empty() ) {
+            StringParamDescriptor* param = desc.defineStringParam(kNatronOfxParamStringSublabelName);
+            param->setIsSecretAndDisabled(true); // always secret
+            param->setIsPersistent(false);
+            param->setEvaluateOnChange(false);
+            if (page) {
+                page->addChild(*param);
             }
         }
 

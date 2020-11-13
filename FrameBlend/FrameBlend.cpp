@@ -366,7 +366,7 @@ private:
 
             for (int x = procWindow.x1; x < procWindow.x2; x++) {
                 const PIX *srcPix = (const PIX *)  (_srcImg ? _srcImg->getPixelAddress(x, y) : 0);
-                size_t renderPix = ( (_renderWindow.x2 - _renderWindow.x1) * (y - _renderWindow.y1) +
+                size_t renderPix = ( (size_t)(_renderWindow.x2 - _renderWindow.x1) * (y - _renderWindow.y1) +
                                      (x - _renderWindow.x1) );
                 int count = _countData ? _countData[renderPix] : 0;
                 float sumWeights = _sumWeightsData ? _sumWeightsData[renderPix] : 0;
@@ -405,22 +405,22 @@ private:
                             for (int c = 0; c < nComponents; ++c) {
                                 switch (operation) {
                                 case eOperationAverage:
-                                    tmpPix[c] = MergeImages2D::plusFunctor((float)srcPixi[c], tmpPix[c]); // compute average in the end
+                                    tmpPix[c] = MergeImages2D::plusFunc((float)srcPixi[c], tmpPix[c]); // compute average in the end
                                     break;
                                 case eOperationMin:
-                                    tmpPix[c] = MergeImages2D::darkenFunctor((float)srcPixi[c], tmpPix[c]);
+                                    tmpPix[c] = MergeImages2D::darkenFunc((float)srcPixi[c], tmpPix[c]);
                                     break;
                                 case eOperationMax:
-                                    tmpPix[c] = MergeImages2D::lightenFunctor((float)srcPixi[c], tmpPix[c]);
+                                    tmpPix[c] = MergeImages2D::lightenFunc((float)srcPixi[c], tmpPix[c]);
                                     break;
                                 case eOperationSum:
-                                    tmpPix[c] = MergeImages2D::plusFunctor((float)srcPixi[c], tmpPix[c]);
+                                    tmpPix[c] = MergeImages2D::plusFunc((float)srcPixi[c], tmpPix[c]);
                                     break;
                                 case eOperationProduct:
-                                    tmpPix[c] = MergeImages2D::multiplyFunctor<float,maxValue>(srcPixi[c], tmpPix[c]);
+                                    tmpPix[c] = MergeImages2D::multiplyFunc<float,maxValue>(srcPixi[c], tmpPix[c]);
                                     break;
                                 case eOperationOver:
-                                    tmpPix[c] = MergeImages2D::overFunctor<PIX, maxValue>(srcPixi[c], tmpPix[c], a, b);
+                                    tmpPix[c] = MergeImages2D::overFunc<PIX, maxValue>(srcPixi[c], tmpPix[c], a, b);
                                     break;
                                 }
                             }
@@ -753,7 +753,7 @@ FrameBlendPlugin::setupAndProcess(FrameBlendProcessorBase &processor,
     }
 
     const OfxRectI& renderWindow = args.renderWindow;
-    size_t nPixels = (renderWindow.y2 - renderWindow.y1) * (renderWindow.x2 - renderWindow.x1);
+    size_t nPixels = (size_t)(renderWindow.y2 - renderWindow.y1) * (renderWindow.x2 - renderWindow.x1);
     OperationEnum operation = processor.getOperation();
 
     // Main processing loop.

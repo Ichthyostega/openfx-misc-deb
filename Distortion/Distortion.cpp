@@ -534,7 +534,12 @@ enum OutputModeEnum {
 #define kParamCropToFormatLabel "Crop To Format"
 #define kParamCropToFormatHint "If the source is inside the format and the effect extends it outside of the format, crop it to avoid unnecessary calculations. To avoid unwanted crops, only the borders that were inside of the format in the source clip will be cropped."
 
+#define kParamUseRoD "useRoD"
+#define kParamUseRoDLabel "Use Source RoD"
+#define kParamUseRoDHint "Use the region of definition of the source as the source format."
 
+static bool gHostIsNatron = false;
+static bool gHostSupportsFormat = false;
 
 // PFBarrel file reader
 
@@ -1269,6 +1274,7 @@ public:
         , _clamp(NULL)
         , _blackOutside(NULL)
         , _cropToFormat(NULL)
+        , _useRoD(NULL)
         , _mix(NULL)
         , _maskApply(NULL)
         , _maskInvert(NULL)
@@ -1447,6 +1453,12 @@ public:
         } else {
             assert( !paramExists(kParamCropToFormat) );
         }
+        if ( paramExists(kParamUseRoD) ) {
+            _useRoD = fetchBooleanParam(kParamUseRoD);
+            assert(_useRoD);
+        } else {
+            assert( !paramExists(kParamUseRoD) );
+        }
         _mix = fetchDoubleParam(kParamMix);
         _maskApply = ( ofxsMaskIsAlwaysConnected( OFX::getImageEffectHostDescription() ) && paramExists(kParamMaskApply) ) ? fetchBooleanParam(kParamMaskApply) : 0;
         _maskInvert = fetchBooleanParam(kParamMaskInvert);
@@ -1517,6 +1529,16 @@ private:
     DistortionModel* getDistortionModel(const OfxRectD& format, const OfxPointD& renderScale, double time);
 
     bool getLensDistortionFormat(double time, const OfxPointD& renderScale, OfxRectD *format, double *par);
+
+    void getInputClipFormat(Clip *clip,
+                            const double time,
+                            double* par,
+                            OfxRectD* rect) const;
+
+    void getInputClipFormatI(Clip *clip,
+                             const double time,
+                             double* par,
+                             OfxRectI* rect) const;
 
 private:
     int _majorVersion;
@@ -1639,6 +1661,7 @@ private:
     BooleanParam* _clamp;
     BooleanParam* _blackOutside;
     BooleanParam* _cropToFormat;
+    BooleanParam* _useRoD;
     DoubleParam* _mix;
     BooleanParam* _maskApply;
     BooleanParam* _maskInvert;
@@ -1676,15 +1699,9 @@ DistortionPlugin::getClipPreferences(ClipPreferencesSetter &clipPreferences)
             clipPreferences.setPixelAspectRatio(*_dstClip, par);
         }
     } else if ( _plugin == eDistortionPluginSTMap && _uvClip && _uvClip->isConnected() ) {
+        double par;
         OfxRectI uvFormat;
-        _uvClip->getFormat(uvFormat);
-        double par = _uvClip->getPixelAspectRatio();
-        if ( OFX::Coords::rectIsEmpty(uvFormat) ) {
-            // no format is available, use the RoD instead
-            const OfxRectD& srcRod = _uvClip->getRegionOfDefinition(0.);
-            const OfxPointD rs1 = {1., 1.};
-            Coords::toPixelNearest(srcRod, rs1, par, &uvFormat);
-        }
+        getInputClipFormatI(_uvClip, 0., &par, &uvFormat);
         clipPreferences.setOutputFormat(uvFormat);
         clipPreferences.setPixelAspectRatio(*_dstClip, par);
     }
@@ -2183,10 +2200,10 @@ DistortionPlugin::getLensDistortionFormat(double time,
                 formatI.x1 = formatI.y1 = formatI.x2 = formatI.y2 = 0; // default value
                 if (_majorVersion >= 3) {
                     // before version 3, LensDistortion was only using RoD
-                    _srcClip->getFormat(formatI);
+                    getInputClipFormatI(_srcClip, time, par, &formatI);
                 }
-                *par = _srcClip->getPixelAspectRatio();
                 if ( OFX::Coords::rectIsEmpty(formatI) ) {
+                    *par = _srcClip->getPixelAspectRatio();
                     // no format is available, use the RoD instead
                     const OfxRectD& srcRod = _srcClip->getRegionOfDefinition(time);
                     // Coords::toPixelNearest(srcRod, renderScale, *par, format);
@@ -2221,6 +2238,49 @@ DistortionPlugin::getLensDistortionFormat(double time,
             break;
     }
     return false;
+}
+
+// recturn the input format in pixel units (we use a RectD in case the input format is the RoD)
+void
+DistortionPlugin::getInputClipFormat(Clip* clip,
+                                     const double time,
+                                     double* par,
+                                     OfxRectD* rect) const
+{
+    *par = _srcClip->getPixelAspectRatio();
+#ifdef OFX_EXTENSIONS_NATRON
+    if (gHostSupportsFormat && !_useRoD->getValueAtTime(time)) {
+        OfxRectI format = {0, 0, 0, 0};
+        clip->getFormat(format);
+        if ( !Coords::rectIsEmpty(format) ) {
+            // host returned a non-empty format
+            rect->x1 = format.x1;
+            rect->y1 = format.y1;
+            rect->x2 = format.x2;
+            rect->y2 = format.y2;
+            return;
+        }
+    }
+    // host does not support format
+#endif
+    OfxRectD rod = clip->getRegionOfDefinition(time);
+    const OfxPointD rsOne = {1., 1.}; // format is with respect to unit renderscale
+    Coords::toPixelSub(rod, rsOne, *par, rect);
+}
+
+// recturn the input format in pixel units
+void
+DistortionPlugin::getInputClipFormatI(Clip* clip,
+                                      const double time,
+                                      double* par,
+                                      OfxRectI* rect) const
+{
+    OfxRectD rectD = {0., 0., 0., 0.};
+    getInputClipFormat(clip, time, par, &rectD);
+    rect->x1 = (int)std::floor(rectD.x1 + 0.5);
+    rect->y1 = (int)std::floor(rectD.y1 + 0.5);
+    rect->x2 = (int)std::ceil(rectD.x2 - 0.5);
+    rect->y2 = (int)std::ceil(rectD.y2 - 0.5);
 }
 
 /* set up and run a processor */
@@ -2468,9 +2528,10 @@ DistortionPlugin::setupAndProcess(DistortionProcessorBase &processor,
     } else if (_srcClip && _srcClip->isConnected()) {
         OfxRectI formatI;
         formatI.x1 = formatI.y1 = formatI.x2 = formatI.y2 = 0; // default value
-        _srcClip->getFormat(formatI);
-        double par = _srcClip->getPixelAspectRatio();
+        double par;
+        getInputClipFormatI(_srcClip, time, &par, &formatI);
         if ( OFX::Coords::rectIsEmpty(formatI) ) {
+            par = _srcClip->getPixelAspectRatio();
             // no format is available, use the RoD instead
             const OfxRectD& srcRod = _srcClip->getRegionOfDefinition(time);
             // Coords::toPixelNearest(srcRod, renderScale, *par, format);
@@ -3073,7 +3134,8 @@ DistortionPlugin::getRegionOfDefinition(const RegionOfDefinitionArguments &args,
             // crop to format works by clamping the output rod to the format wherever the input rod was inside the format
             // this avoids unwanted crops (cropToFormat is checked by default)
             OfxRectI srcFormat;
-            _srcClip->getFormat(srcFormat);
+            double par;
+            getInputClipFormatI(_srcClip, time, &par, &srcFormat);
             OfxRectI srcFormatEnclosing;
             srcFormatEnclosing.x1 = std::floor(srcFormat.x1 * args.renderScale.x);
             srcFormatEnclosing.x2 = std::ceil(srcFormat.x2 * args.renderScale.x);
@@ -3430,6 +3492,12 @@ DistortionPluginFactory<plugin, majorVersion>::describe(ImageEffectDescriptor &d
          (plugin != eDistortionPluginLensDistortion && this->getMajorVersion() < kPluginVersionMajor) ) {
         desc.setIsDeprecated(true);
     }
+#ifdef OFX_EXTENSIONS_NATRON
+    if (getImageEffectHostDescription()->isNatron) {
+        gHostIsNatron = true;
+        gHostSupportsFormat = true;
+    }
+#endif
 } // >::describe
 
 static void
@@ -3488,7 +3556,7 @@ DistortionPluginFactory<plugin, majorVersion>::describeInContext(ImageEffectDesc
 #endif
     srcClip->setIsMask(false);
     if (plugin == eDistortionPluginLensDistortion) {
-        // in LensDistrortion, if Output Mode is set to STMap, the size is taken from the project size
+        // in LensDistortion, if Output Mode is set to STMap, the size is taken from the project size
         srcClip->setOptional(true);
     }
     if (plugin == eDistortionPluginIDistort) {
@@ -4557,6 +4625,18 @@ DistortionPluginFactory<plugin, majorVersion>::describeInContext(ImageEffectDesc
         param->setLabel(kParamCropToFormatLabel);
         param->setHint(kParamCropToFormatHint);
         param->setDefault(true);
+        if (page) {
+            page->addChild(*param);
+        }
+    }
+    {
+        BooleanParamDescriptor* param = desc.defineBooleanParam(kParamUseRoD);
+        param->setLabel(kParamUseRoDLabel);
+        param->setHint(kParamUseRoDHint);
+        // for now, only Natron supports OFX format extension
+        param->setEnabled(gHostSupportsFormat);
+        param->setDefault(!gHostSupportsFormat);
+        param->setAnimates(false);
         if (page) {
             page->addChild(*param);
         }

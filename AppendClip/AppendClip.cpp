@@ -256,7 +256,7 @@ AppendClipPlugin::getSources(int firstFrame,
     int clip1Max = -1;
     int clip1OutMin = firstFrame;
     int clip1OutMax = firstFrame - 1;
-    int lastClip = _srcClip.size() - 1;
+    int lastClip = static_cast<int>( _srcClip.size() ) - 1;
     while ( lastClip >= 0 && !_srcClip[lastClip]->isConnected() ) {
         --lastClip;
     }
@@ -643,7 +643,7 @@ AppendClipPlugin::setupAndProcess(ImageBlenderBase &processor,
     assert(0 < alpha0 && alpha0 <= 1 && 0 <= alpha1 && alpha1 < 1);
     assert( toImg.get() || (alpha1 == 0) );
     assert( fromImg.get() );
-    processor.setBlend(1. - alpha0);
+    processor.setBlend(static_cast<float>(1. - alpha0));
 
     // Call the base class process member, this will call the derived templated process code
     processor.process();
