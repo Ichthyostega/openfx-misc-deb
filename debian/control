@@ -17,16 +17,16 @@ Description: Miscellaneous OFX / OpenFX plugins for Natron.
  plugins were primarily developed for Natron, but may be used with other
  OpenFX hosts as well.
  .
- * Image: color bars and test images
- * Draw: generate noise, ramps and shapes
- * Time: interlace, frame hold, average, retiming, buffer
- * Channel: rearrange channels and convet bit depth
- * Color: adjust, equalize, gamma, colorspace, colormodel
- * Filter: blur, erode, sharpen, smooth, denoise, edge detect, mask fill
- * Keyer: chroma key, difference key, spill correct, matte monitor
- * Merge: masked copy, average, merge, multiply, dissolve, switch
- * Transform: transform, fit, perspective, displace, lens distort, point track
- * Stereo Views: (Sony Vegas compatible) stereoscopic 3D, anaglyph, side-by-side
+  * Image: color bars and test images
+  * Draw: generate noise, ramps and shapes
+  * Time: interlace, frame hold, average, retiming, buffer
+  * Channel: rearrange channels and convet bit depth
+  * Color: adjust, equalize, gamma, colorspace, colormodel
+  * Filter: blur, erode, sharpen, smooth, denoise, edge detect, mask fill
+  * Keyer: chroma key, difference key, spill correct, matte monitor
+  * Merge: masked copy, average, merge, multiply, dissolve, switch
+  * Transform: transform, fit, perspective, displace, lens distort, point track
+  * Stereo Views: (Sony Vegas compatible) stereoscopic 3D, anaglyph, side-by-side
  .
  See https://github.com/NatronGitHub/openfx-misc for a complete list of plugins.
 
