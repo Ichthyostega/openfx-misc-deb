@@ -8,22 +8,22 @@ Note: buildservers might be shielded from the net to enforce that constraint.
 
 As workaround, the missing content will be supplied via debian/patches
 ---
- CImg/Makefile | 26 +++++++++++++++++---------
- 1 file changed, 17 insertions(+), 9 deletions(-)
+ CImg/Makefile | 23 ++++++++++++++---------
+ 1 file changed, 14 insertions(+), 9 deletions(-)
 
 diff --git a/CImg/Makefile b/CImg/Makefile
-index f7e74da..aec1207 100644
+index 925a0f7..f8c6d6f 100644
 --- a/CImg/Makefile
 +++ b/CImg/Makefile
-@@ -158,24 +158,32 @@ endif
- # commit 39215451d0b839b4e72d32afb15ea69701a7f4eb is CImg 2.8.0
- # commit 530715cfe254d325cf8cec345210d9935fe4cf50 is CImg 2.8.1
- # commit b29d5cb0ed4ca3d94ceae31232668f646c9e45a9 is CImg 2.8.2
--CIMGVERSION=b29d5cb0ed4ca3d94ceae31232668f646c9e45a9
+@@ -161,24 +161,29 @@ endif
+ # commit 12f1fac5dc1221eca3c0ecdca7bd77da7392ddbb is CImg 2.8.3
+ # commit 9e01d8868613bf31e305044d8e2e9d9f0217f030 is CImg 2.8.4
+ # commit 89b9d062ec472df3d33989e6d5d2a8b50ba0775c is CImg 2.9.0
+-CIMGVERSION=89b9d062ec472df3d33989e6d5d2a8b50ba0775c
  
 -CImg.h: Inpaint/inpaint.h
 -	curl -L -s -S -o $@ https://raw.githubusercontent.com/dtschump/CImg/$(CIMGVERSION)/CImg.h
-+##CIMGVERSION=b29d5cb0ed4ca3d94ceae31232668f646c9e45a9
++##CIMGVERSION=89b9d062ec472df3d33989e6d5d2a8b50ba0775c
 +## DEB: code in this version now provided via debian/patches
 +
 +##CImg.h: Inpaint/inpaint.h
@@ -41,9 +41,6 @@ index f7e74da..aec1207 100644
 +#
 +#   DEB: the following patch is applied via debian/patches (makes cleaning simpler)
 +##	patch -p0 -d. < Inpaint/inpaint.h.patch
-+
-+##nlmeans.h:
-+##	curl -L -s -S -o $@ https://raw.githubusercontent.com/dtschump/CImg/$(CIMGVERSION)/plugins/nlmeans.h
  
 -#nlmeans.h:
 -#	curl -L -s -S -o $@ https://raw.githubusercontent.com/dtschump/CImg/$(CIMGVERSION)/plugins/nlmeans.h

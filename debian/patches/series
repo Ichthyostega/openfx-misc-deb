@@ -1,4 +1,7 @@
 Plugin-path-OFX.patch
 CImg--no-downloads-please.patch
-provide-CImg-2.8.2.patch
+provide-CImg-2.9.0.patch
 CImg-make-Inpaint-abortable.patch
+0004-DenoiseSharpen-never-throw-an-exception-in-OpenMP-lo.patch
+0005-CImgBlur-make-sure-derivatives-are-produced-for-box-.patch
+0006-Log2Lin-fix-inconsistency-between-log2lin-and-lin2lo.patch
