@@ -1,3 +1,11 @@
+openfx-misc-natron (2.3.15+libs-1~buster) Lumiera-buster-tool; urgency=low
+
+  * Based on official Release 2.3.15
+  * include updated CImg (2.9.0) + some bugfixes
+  * Rebuild for use on Debian/Buster(stable).
+
+ -- Hermann Vosseler <deb@ichthyostega.de>  Sat, 14 Nov 2020 01:28:18 +0100
+
 openfx-misc-natron (2.3.15~rc14+libs-1~buster) Lumiera-buster-tool; urgency=low
 
   * New Upstream Release (actually RC14 for Natron 2.3.15).
